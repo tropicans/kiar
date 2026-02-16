@@ -1,4 +1,4 @@
-# 📱 KIAR — QR Scanner Verifikasi Registrasi
+# 📱 KYARA — QR Scanner Verifikasi Registrasi
 
 Aplikasi web scanner QR code untuk verifikasi kehadiran/registrasi peserta. Terintegrasi dengan Google Sheets sebagai database, mendukung multi-user (10-15 staf), dan berjalan offline sebagai PWA.
 
@@ -124,7 +124,7 @@ const COL = {
 ## 📂 Struktur File
 
 ```
-kiar/
+kyara/
 ├── index.html          # Halaman utama
 ├── src/
 │   ├── main.ts         # Logic utama (scanner, UI, lock screen, settings)

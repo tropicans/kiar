@@ -6,6 +6,7 @@
 // ============================================
 
 const STORAGE_KEY = 'qrscan_apps_script_url';
+const FETCH_TIMEOUT = 15000; // 15 seconds
 
 export interface RegistrantData {
     id: string;
@@ -33,7 +34,11 @@ export function getAppsScriptUrl(): string {
 }
 
 export function setAppsScriptUrl(url: string): void {
-    localStorage.setItem(STORAGE_KEY, url.trim());
+    const trimmed = url.trim();
+    if (trimmed && !trimmed.startsWith('https://script.google.com/')) {
+        throw new Error('URL harus dimulai dengan https://script.google.com/');
+    }
+    localStorage.setItem(STORAGE_KEY, trimmed);
 }
 
 export function isConfigured(): boolean {
@@ -50,10 +55,14 @@ export async function testConnection(): Promise<{ success: boolean; error?: stri
     }
 
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
         const response = await fetch(`${url}?action=ping`, {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!response.ok) {
             return { success: false, error: `HTTP ${response.status}` };
@@ -62,7 +71,8 @@ export async function testConnection(): Promise<{ success: boolean; error?: stri
         // If we get a response, connection works
         return { success: true };
     } catch (err: any) {
-        return { success: false, error: `Koneksi gagal: ${err.message}` };
+        const msg = err.name === 'AbortError' ? 'Timeout — koneksi terlalu lama' : `Koneksi gagal: ${err.message}`;
+        return { success: false, error: msg };
     }
 }
 
@@ -77,10 +87,14 @@ export async function lookupById(id: string): Promise<LookupResult> {
 
     try {
         const url = getAppsScriptUrl();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
         const response = await fetch(`${url}?action=lookup&id=${encodeURIComponent(id)}`, {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -106,10 +120,8 @@ export async function lookupById(id: string): Promise<LookupResult> {
             }
         };
     } catch (err: any) {
-        return {
-            success: false,
-            error: `Gagal mengambil data: ${err.message}`,
-        };
+        const msg = err.name === 'AbortError' ? 'Timeout — coba lagi' : `Gagal mengambil data: ${err.message}`;
+        return { success: false, error: msg };
     }
 }
 
@@ -127,6 +139,8 @@ export async function verifyRegistrant(
 
     try {
         const url = getAppsScriptUrl();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -136,7 +150,9 @@ export async function verifyRegistrant(
                 verifiedAt: new Date().toISOString(),
                 verifiedBy: staffName || 'Unknown',
             }),
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -150,7 +166,8 @@ export async function verifyRegistrant(
 
         return { success: true };
     } catch (err: any) {
-        return { success: false, error: `Gagal memverifikasi: ${err.message}` };
+        const msg = err.name === 'AbortError' ? 'Timeout — coba lagi' : `Gagal memverifikasi: ${err.message}`;
+        return { success: false, error: msg };
     }
 }
 

@@ -1,0 +1,10 @@
+services:
+  kyara:
+    build: .
+    container_name: kyara-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    # If using Cloudflare Tunnel or reverse proxy, map to internal port only:
+    # ports:
+    #   - "127.0.0.1:8080:80"

@@ -28,9 +28,12 @@ interface ScanHistoryItem {
 const HISTORY_KEY = 'qrscan_history';
 const THEME_KEY = 'qrscan_theme';
 const PIN_KEY = 'qrscan_pin';
-const STAFF_KEY = 'qrscan_staff_list';
+const ADMIN_PIN_KEY = 'qrscan_admin_pin';
 const ACTIVE_STAFF_KEY = 'qrscan_active_staff';
+const AUTO_SCAN_KEY = 'qrscan_autoscan';
 const MAX_HISTORY = 50;
+const MAX_PIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 30000; // 30 seconds
 
 // ============================================
 // State
@@ -38,8 +41,17 @@ const MAX_HISTORY = 50;
 
 let html5Qrcode: Html5Qrcode | null = null;
 let isScanning = false;
+let isScannerStarting = false;
 let currentRegistrant: RegistrantData | null = null;
 let currentStaffName = '';
+let lastScannedText = '';
+let lastScanTime = 0;
+
+// Rate limiter state
+let loginFailedAttempts = 0;
+let loginLockoutUntil = 0;
+let adminFailedAttempts = 0;
+let adminLockoutUntil = 0;
 
 // ============================================
 // Scan Beep Sound (Web Audio API)
@@ -100,6 +112,9 @@ const manualIdInput = document.getElementById('manualIdInput') as HTMLInputEleme
 // Auto-scan
 const autoScanCheck = document.getElementById('autoScanCheck') as HTMLInputElement;
 
+// Viewfinder
+const viewfinderOverlay = document.getElementById('viewfinderOverlay') as HTMLDivElement;
+
 // Verification Panel
 const verifySection = document.getElementById('verifySection') as HTMLElement;
 const verifyLoading = document.getElementById('verifyLoading') as HTMLDivElement;
@@ -151,8 +166,15 @@ const staffBadgeName = document.getElementById('staffBadgeName') as HTMLSpanElem
 const lockScreen = document.getElementById('lockScreen') as HTMLDivElement;
 const pinInput = document.getElementById('pinInput') as HTMLInputElement;
 const lockError = document.getElementById('lockError') as HTMLDivElement;
-const staffSelect = document.getElementById('staffSelect') as HTMLSelectElement;
+const staffNameInput = document.getElementById('staffNameInput') as HTMLInputElement;
 const lockUnlockBtn = document.getElementById('lockUnlockBtn') as HTMLButtonElement;
+
+// Admin PIN Prompt
+const adminPinModal = document.getElementById('adminPinModal') as HTMLDivElement;
+const adminPinInput = document.getElementById('adminPinInput') as HTMLInputElement;
+const adminPinError = document.getElementById('adminPinError') as HTMLDivElement;
+const adminPinSubmit = document.getElementById('adminPinSubmit') as HTMLButtonElement;
+const closeAdminPin = document.getElementById('closeAdminPin') as HTMLButtonElement;
 
 // Settings
 const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement;
@@ -162,7 +184,7 @@ const settingsUrl = document.getElementById('settingsUrl') as HTMLInputElement;
 const testConnectionBtn = document.getElementById('testConnectionBtn') as HTMLButtonElement;
 const settingsUrlStatus = document.getElementById('settingsUrlStatus') as HTMLDivElement;
 const settingsPin = document.getElementById('settingsPin') as HTMLInputElement;
-const settingsStaff = document.getElementById('settingsStaff') as HTMLTextAreaElement;
+const settingsAdminPin = document.getElementById('settingsAdminPin') as HTMLInputElement;
 const saveSettingsBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement;
 
 // Others
@@ -216,60 +238,93 @@ function updateNetworkStatus() {
 // Lock Screen & PIN
 // ============================================
 
-function getPin(): string {
+function getStoredPinHash(): string {
   return localStorage.getItem(PIN_KEY) || '';
 }
 
-function getStaffList(): string[] {
-  try {
-    const data = localStorage.getItem(STAFF_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch { return []; }
+function getStoredAdminPinHash(): string {
+  return localStorage.getItem(ADMIN_PIN_KEY) || '';
+}
+
+async function hashPin(pin: string): Promise<string> {
+  const data = new TextEncoder().encode(pin);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyPin(enteredPin: string): Promise<boolean> {
+  const storedHash = getStoredPinHash();
+  if (!storedHash) return false;
+  const enteredHash = await hashPin(enteredPin);
+  return enteredHash === storedHash;
+}
+
+async function verifyAdminPin(enteredPin: string): Promise<boolean> {
+  const storedHash = getStoredAdminPinHash();
+  if (!storedHash) return false;
+  const enteredHash = await hashPin(enteredPin);
+  return enteredHash === storedHash;
+}
+
+function isAdminPinSet(): boolean {
+  return getStoredAdminPinHash().length > 0;
 }
 
 function isPinEnabled(): boolean {
-  return getPin().length > 0;
+  return getStoredPinHash().length > 0;
 }
 
+// --- Rate Limiter ---
+function isLockedOut(type: 'login' | 'admin'): boolean {
+  const now = Date.now();
+  if (type === 'login') {
+    if (loginLockoutUntil > now) return true;
+    if (loginFailedAttempts >= MAX_PIN_ATTEMPTS) {
+      loginLockoutUntil = now + LOCKOUT_DURATION;
+      return true;
+    }
+    return false;
+  } else {
+    if (adminLockoutUntil > now) return true;
+    if (adminFailedAttempts >= MAX_PIN_ATTEMPTS) {
+      adminLockoutUntil = now + LOCKOUT_DURATION;
+      return true;
+    }
+    return false;
+  }
+}
+
+function recordFailedAttempt(type: 'login' | 'admin') {
+  if (type === 'login') loginFailedAttempts++;
+  else adminFailedAttempts++;
+}
+
+function resetAttempts(type: 'login' | 'admin') {
+  if (type === 'login') { loginFailedAttempts = 0; loginLockoutUntil = 0; }
+  else { adminFailedAttempts = 0; adminLockoutUntil = 0; }
+}
+
+function getRemainingLockout(type: 'login' | 'admin'): number {
+  const until = type === 'login' ? loginLockoutUntil : adminLockoutUntil;
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+// --- Lock Screen ---
 function initLockScreen() {
   if (!isPinEnabled()) {
-    // No PIN set — skip lock screen, use last staff or empty
     lockScreen.classList.add('hidden');
     currentStaffName = localStorage.getItem(ACTIVE_STAFF_KEY) || '';
     updateStaffBadge();
     return;
   }
 
-  // Show lock screen
   lockScreen.classList.remove('hidden');
 
-  // Populate staff dropdown
-  populateStaffSelect();
-
-  // Focus PIN input
-  setTimeout(() => pinInput.focus(), 100);
-}
-
-function populateStaffSelect() {
-  const staffList = getStaffList();
-
-  // Clear existing options except placeholder
-  while (staffSelect.options.length > 1) {
-    staffSelect.remove(1);
-  }
-
-  staffList.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    staffSelect.appendChild(opt);
-  });
-
-  // Pre-select last active staff if any
+  // Pre-fill last staff name
   const lastStaff = localStorage.getItem(ACTIVE_STAFF_KEY);
-  if (lastStaff && staffList.includes(lastStaff)) {
-    staffSelect.value = lastStaff;
-  }
+  if (lastStaff) staffNameInput.value = lastStaff;
+
+  setTimeout(() => pinInput.focus(), 100);
 }
 
 function updateStaffBadge() {
@@ -281,34 +336,53 @@ function updateStaffBadge() {
   }
 }
 
-function handleUnlock() {
-  const pin = getPin();
-  const enteredPin = pinInput.value.trim();
+async function handleUnlock() {
+  // Rate limit check
+  if (isLockedOut('login')) {
+    const remaining = getRemainingLockout('login');
+    lockError.style.display = 'block';
+    lockError.textContent = `Terlalu banyak percobaan. Tunggu ${remaining} detik.`;
+    return;
+  }
 
-  if (enteredPin !== pin) {
+  const enteredPin = pinInput.value.trim();
+  const isValid = await verifyPin(enteredPin);
+
+  if (!isValid) {
+    recordFailedAttempt('login');
     pinInput.classList.add('error');
     lockError.style.display = 'block';
-    lockError.textContent = 'PIN salah';
+
+    if (isLockedOut('login')) {
+      lockError.textContent = `Terlalu banyak percobaan. Tunggu 30 detik.`;
+      setTimeout(() => resetAttempts('login'), LOCKOUT_DURATION);
+    } else {
+      const left = MAX_PIN_ATTEMPTS - loginFailedAttempts;
+      lockError.textContent = `PIN salah (${left} percobaan tersisa)`;
+    }
+
     setTimeout(() => pinInput.classList.remove('error'), 400);
     pinInput.value = '';
     pinInput.focus();
     return;
   }
 
-  const selectedStaff = staffSelect.value;
-  if (getStaffList().length > 0 && !selectedStaff) {
+  const staffName = staffNameInput.value.trim();
+  if (!staffName) {
     lockError.style.display = 'block';
-    lockError.textContent = 'Pilih nama staf terlebih dahulu';
+    lockError.textContent = 'Masukkan nama Anda terlebih dahulu';
+    staffNameInput.focus();
     return;
   }
 
   // Unlock!
-  currentStaffName = selectedStaff || '';
+  resetAttempts('login');
+  currentStaffName = staffName;
   localStorage.setItem(ACTIVE_STAFF_KEY, currentStaffName);
   lockScreen.classList.add('hidden');
   lockError.style.display = 'none';
   updateStaffBadge();
-  showToast(`Selamat datang, ${currentStaffName || 'Staf'}!`);
+  showToast(`Selamat datang, ${currentStaffName}!`);
 }
 
 // ============================================
@@ -316,10 +390,26 @@ function handleUnlock() {
 // ============================================
 
 function openSettings() {
-  // Load current values
+  // Don't allow access behind lock screen
+  if (!lockScreen.classList.contains('hidden')) return;
+
+  // If Admin PIN is set, require it first
+  if (isAdminPinSet()) {
+    adminPinInput.value = '';
+    adminPinError.style.display = 'none';
+    adminPinModal.style.display = 'flex';
+    setTimeout(() => adminPinInput.focus(), 100);
+    return;
+  }
+
+  // No Admin PIN set — open Settings directly (first-time setup)
+  showSettingsModal();
+}
+
+function showSettingsModal() {
   settingsUrl.value = getAppsScriptUrl();
-  settingsPin.value = getPin();
-  settingsStaff.value = getStaffList().join('\n');
+  settingsPin.value = '';
+  settingsAdminPin.value = '';
   settingsUrlStatus.textContent = '';
   settingsUrlStatus.className = 'settings-status';
   settingsModal.style.display = 'flex';
@@ -327,6 +417,53 @@ function openSettings() {
 
 function closeSettingsModal() {
   settingsModal.style.display = 'none';
+}
+
+function closeAdminPinModal() {
+  adminPinModal.style.display = 'none';
+  adminPinInput.value = '';
+  adminPinError.style.display = 'none';
+}
+
+async function handleAdminPinSubmit() {
+  // Rate limit check
+  if (isLockedOut('admin')) {
+    const remaining = getRemainingLockout('admin');
+    adminPinError.style.display = 'block';
+    adminPinError.textContent = `Terlalu banyak percobaan. Tunggu ${remaining} detik.`;
+    return;
+  }
+
+  const enteredPin = adminPinInput.value.trim();
+  if (!enteredPin) {
+    adminPinError.style.display = 'block';
+    adminPinError.textContent = 'Masukkan Admin PIN';
+    return;
+  }
+
+  const isValid = await verifyAdminPin(enteredPin);
+
+  if (!isValid) {
+    recordFailedAttempt('admin');
+    adminPinError.style.display = 'block';
+
+    if (isLockedOut('admin')) {
+      adminPinError.textContent = `Terlalu banyak percobaan. Tunggu 30 detik.`;
+      setTimeout(() => resetAttempts('admin'), LOCKOUT_DURATION);
+    } else {
+      const left = MAX_PIN_ATTEMPTS - adminFailedAttempts;
+      adminPinError.textContent = `Admin PIN salah (${left} percobaan tersisa)`;
+    }
+
+    adminPinInput.value = '';
+    adminPinInput.focus();
+    return;
+  }
+
+  // Success
+  resetAttempts('admin');
+  closeAdminPinModal();
+  showSettingsModal();
 }
 
 async function handleTestConnection() {
@@ -337,8 +474,22 @@ async function handleTestConnection() {
     return;
   }
 
-  // Temporarily set URL for testing
-  setAppsScriptUrl(url);
+  // Validate URL format
+  if (!url.startsWith('https://script.google.com/')) {
+    settingsUrlStatus.textContent = '✗ URL harus dimulai dengan https://script.google.com/';
+    settingsUrlStatus.className = 'settings-status error';
+    return;
+  }
+
+  // Save old URL, temporarily set new URL for testing
+  const oldUrl = getAppsScriptUrl();
+  try {
+    setAppsScriptUrl(url);
+  } catch {
+    settingsUrlStatus.textContent = '✗ URL tidak valid';
+    settingsUrlStatus.className = 'settings-status error';
+    return;
+  }
 
   testConnectionBtn.disabled = true;
   testConnectionBtn.textContent = '...';
@@ -354,36 +505,44 @@ async function handleTestConnection() {
     settingsUrlStatus.textContent = '✓ Koneksi berhasil!';
     settingsUrlStatus.className = 'settings-status success';
   } else {
-    settingsUrlStatus.textContent = `✗ ${result.error}`;
+    // Restore old URL on failure
+    setAppsScriptUrl(oldUrl);
+    settingsUrlStatus.textContent = '✗ Koneksi gagal. Periksa URL dan coba lagi.';
     settingsUrlStatus.className = 'settings-status error';
   }
 }
 
-function handleSaveSettings() {
-  // Save URL
+async function handleSaveSettings() {
+  // Save URL (with validation)
   const url = settingsUrl.value.trim();
-  setAppsScriptUrl(url);
-
-  // Save PIN
-  const pin = settingsPin.value.trim();
-  if (pin) {
-    localStorage.setItem(PIN_KEY, pin);
-  } else {
-    localStorage.removeItem(PIN_KEY);
+  try {
+    setAppsScriptUrl(url);
+  } catch (err: any) {
+    showToast('✗ ' + err.message);
+    return;
   }
 
-  // Save Staff List
-  const staffText = settingsStaff.value.trim();
-  const staffList = staffText
-    .split('\n')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-  localStorage.setItem(STAFF_KEY, JSON.stringify(staffList));
+  // Save Login PIN (hashed)
+  const pin = settingsPin.value.trim();
+  if (pin) {
+    const pinHash = await hashPin(pin);
+    localStorage.setItem(PIN_KEY, pinHash);
+  }
+
+  // Save Admin PIN (hashed) — only update if user typed something
+  const adminPin = settingsAdminPin.value.trim();
+  if (adminPin) {
+    if (adminPin.length < 4) {
+      showToast('Admin PIN minimal 4 digit');
+      return;
+    }
+    const adminPinHash = await hashPin(adminPin);
+    localStorage.setItem(ADMIN_PIN_KEY, adminPinHash);
+  }
 
   closeSettingsModal();
   showToast('✓ Pengaturan tersimpan');
 
-  // Update config state
   if (!isConfigured()) {
     console.log('%c⚠️ Mode Demo — Google Sheet belum terhubung', 'color: #feca57; font-weight: bold');
   }
@@ -435,7 +594,13 @@ function flashSuccess() {
   overlay.className = 'scan-success-overlay';
   document.body.appendChild(overlay);
   setTimeout(() => overlay.remove(), 500);
+  // Haptic feedback — short vibration on scan
   if (navigator.vibrate) navigator.vibrate(100);
+}
+
+// Haptic feedback — double pulse on verify
+function hapticVerify() {
+  if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
 }
 
 // ============================================
@@ -473,7 +638,11 @@ function getHistory(): ScanHistoryItem[] {
 }
 
 function saveHistory(history: ScanHistoryItem[]) {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  } catch {
+    // localStorage full (e.g. Safari private mode) — silently fail
+  }
 }
 
 function addToHistory(text: string, type: 'verified' | 'pending' | 'text' = 'text'): ScanHistoryItem {
@@ -496,6 +665,7 @@ function removeFromHistory(id: string) {
 }
 
 function clearHistory() {
+  if (!confirm('Hapus semua riwayat scan?')) return;
   localStorage.removeItem(HISTORY_KEY);
   renderHistory();
   showToast('Riwayat dihapus');
@@ -584,7 +754,9 @@ function escapeHtml(text: string): string {
 // ============================================
 
 async function startScanner() {
-  if (isScanning) return;
+  if (isScanning || isScannerStarting) return;
+  isScannerStarting = true;
+  startScanBtn.disabled = true;
 
   try {
     html5Qrcode = new Html5Qrcode('reader');
@@ -592,17 +764,21 @@ async function startScanner() {
 
     scannerPlaceholder.style.display = 'none';
     startScanBtn.style.display = 'none';
-    stopScanBtn.style.display = 'inline-flex';
-    isScanning = true;
+    stopScanBtn.style.display = 'flex';
+    viewfinderOverlay.style.display = 'flex';
 
     await html5Qrcode.start(
       { facingMode: 'environment' }, config, onScanSuccess,
       () => { } // ignore no-QR frames
     );
+    isScanning = true;
   } catch (err) {
     console.error('Scanner error:', err);
     showToast('Gagal mengakses kamera. Pastikan izin kamera diberikan.');
     resetScanner();
+  } finally {
+    isScannerStarting = false;
+    startScanBtn.disabled = false;
   }
 }
 
@@ -618,11 +794,18 @@ async function stopScanner() {
 function resetScanner() {
   isScanning = false;
   scannerPlaceholder.style.display = 'flex';
-  startScanBtn.style.display = 'inline-flex';
+  startScanBtn.style.display = 'flex';
   stopScanBtn.style.display = 'none';
+  viewfinderOverlay.style.display = 'none';
 }
 
 function onScanSuccess(decodedText: string) {
+  // Debounce: ignore duplicate scans within 3 seconds
+  const now = Date.now();
+  if (decodedText === lastScannedText && now - lastScanTime < 3000) return;
+  lastScannedText = decodedText;
+  lastScanTime = now;
+
   playScanBeep();
   flashSuccess();
   stopScanner();
@@ -661,8 +844,8 @@ async function handleScanResult(scannedId: string) {
     if (!isConfigured()) {
       showToast('⚠️ Mode demo — Google Sheet belum terhubung');
     }
-  } catch (err: any) {
-    showVerifyError('Terjadi kesalahan: ' + err.message);
+  } catch {
+    showVerifyError('Terjadi kesalahan koneksi. Periksa jaringan dan coba lagi.');
     addToHistory(trimmedId, 'text');
     renderHistory();
   }
@@ -682,7 +865,21 @@ function showVerifyData(data: RegistrantData) {
 
   regId.textContent = data.id;
   regNama.textContent = data.nama;
-  regPhone.textContent = data.phone;
+
+  // Phone masking — show masked, click to reveal
+  const phone = data.phone || '';
+  const masked = phone.length > 4
+    ? phone.substring(0, 4) + '****' + phone.substring(phone.length - 4)
+    : phone;
+  regPhone.innerHTML = `<span class="phone-masked" title="Klik untuk tampilkan">${escapeHtml(masked)}</span>`;
+  const phoneSpan = regPhone.querySelector('.phone-masked') as HTMLSpanElement;
+  if (phoneSpan) {
+    phoneSpan.style.cursor = 'pointer';
+    phoneSpan.addEventListener('click', () => {
+      phoneSpan.innerHTML = `<a href="tel:${escapeHtml(phone)}" style="color:inherit;text-decoration:underline">${escapeHtml(phone)}</a>`;
+      phoneSpan.style.cursor = 'default';
+    }, { once: true });
+  }
 
   // === DUPLICATE GUARD ===
   if (data.verified) {
@@ -740,8 +937,9 @@ function loadKtpImage(url: string) {
   }
   ktpLoading.style.display = 'flex';
   ktpImage.style.opacity = '0';
+  ktpImage.style.display = 'block';
   ktpImage.onload = () => { ktpLoading.style.display = 'none'; ktpImage.style.opacity = '1'; };
-  ktpImage.onerror = () => { ktpLoading.style.display = 'none'; ktpImage.style.opacity = '1'; };
+  ktpImage.onerror = () => { ktpLoading.style.display = 'none'; ktpImage.style.display = 'none'; };
   ktpImage.src = url;
 }
 
@@ -780,6 +978,7 @@ async function handleVerify() {
       renderHistory();
 
       playVerifyBeep();
+      hapticVerify();
       showToast('✓ Berhasil diverifikasi!');
       flashSuccess();
 
@@ -790,8 +989,8 @@ async function handleVerify() {
       showToast('Gagal memverifikasi: ' + (result.error || 'Unknown error'));
       resetVerifyBtn();
     }
-  } catch (err: any) {
-    showToast('Error: ' + err.message);
+  } catch {
+    showToast('Gagal memverifikasi. Periksa koneksi dan coba lagi.');
     resetVerifyBtn();
   }
 }
@@ -853,7 +1052,30 @@ modalCloseBtn.addEventListener('click', closeKtpFullscreen);
 ktpModal.addEventListener('click', (e) => { if (e.target === ktpModal) closeKtpFullscreen(); });
 
 // History
-clearHistoryBtn.addEventListener('click', clearHistory);
+clearHistoryBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  clearHistory();
+});
+
+// History Toggle (collapsible)
+const historyToggle = document.getElementById('historyToggle') as HTMLDivElement;
+const historyChevron = document.getElementById('historyChevron') as HTMLElement;
+
+historyToggle.addEventListener('click', (e) => {
+  // Don't toggle when clicking the clear button
+  if ((e.target as HTMLElement).closest('#clearHistoryBtn')) return;
+  historyList.classList.toggle('history-collapsed');
+  historyChevron.classList.toggle('rotated');
+  const expanded = !historyList.classList.contains('history-collapsed');
+  historyToggle.setAttribute('aria-expanded', expanded.toString());
+});
+
+historyToggle.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    historyToggle.click();
+  }
+});
 
 // Theme
 themeToggle.addEventListener('click', toggleTheme);
@@ -861,6 +1083,13 @@ themeToggle.addEventListener('click', toggleTheme);
 // Lock Screen
 lockUnlockBtn.addEventListener('click', handleUnlock);
 pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlock(); });
+staffNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlock(); });
+
+// Admin PIN
+adminPinSubmit.addEventListener('click', handleAdminPinSubmit);
+closeAdminPin.addEventListener('click', closeAdminPinModal);
+adminPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAdminPinSubmit(); });
+adminPinModal.addEventListener('click', (e) => { if (e.target === adminPinModal) closeAdminPinModal(); });
 
 // Settings
 settingsBtn.addEventListener('click', openSettings);
@@ -877,6 +1106,7 @@ window.addEventListener('offline', () => { updateNetworkStatus(); showToast('⚠
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeKtpFullscreen();
+    closeAdminPinModal();
     closeSettingsModal();
   }
 });
@@ -899,6 +1129,25 @@ initTheme();
 updateNetworkStatus();
 renderHistory();
 initLockScreen();
+
+// Persist auto-scan preference
+autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
+autoScanCheck.addEventListener('change', () => {
+  try { localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString()); } catch { /* */ }
+});
+
+// Refresh stale timestamps when app becomes visible again
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) renderHistory();
+});
+
+// Auto-scroll to scanner section on load (skip stats)
+const scannerSection = document.getElementById('scannerSection');
+if (scannerSection) {
+  setTimeout(() => {
+    scannerSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 500);
+}
 
 if (!isConfigured()) {
   console.log('%c⚠️ QR Scan: Mode Demo — buka Settings untuk set URL Google Sheet', 'color: #feca57; font-weight: bold');
