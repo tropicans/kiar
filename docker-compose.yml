@@ -1,10 +1,30 @@
 services:
-  kyara:
+  app:
     build: .
     container_name: kyara-web
     restart: unless-stopped
     ports:
-      - "8080:80"
-    # If using Cloudflare Tunnel or reverse proxy, map to internal port only:
-    # ports:
-    #   - "127.0.0.1:8080:80"
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=kiar_secret
+      - DB_NAME=kiar
+      - PORT=8080
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: kyara-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=kiar_secret
+      - POSTGRES_DB=kiar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  postgres_data:

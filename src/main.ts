@@ -4,11 +4,8 @@ import {
   lookupById,
   verifyRegistrant,
   isConfigured,
-  getAppsScriptUrl,
-  setAppsScriptUrl,
-  testConnection,
   type RegistrantData,
-} from './sheets';
+} from './api';
 
 // ============================================
 // Types
@@ -180,9 +177,6 @@ const closeAdminPin = document.getElementById('closeAdminPin') as HTMLButtonElem
 const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement;
 const settingsModal = document.getElementById('settingsModal') as HTMLDivElement;
 const closeSettings = document.getElementById('closeSettings') as HTMLButtonElement;
-const settingsUrl = document.getElementById('settingsUrl') as HTMLInputElement;
-const testConnectionBtn = document.getElementById('testConnectionBtn') as HTMLButtonElement;
-const settingsUrlStatus = document.getElementById('settingsUrlStatus') as HTMLDivElement;
 const settingsPin = document.getElementById('settingsPin') as HTMLInputElement;
 const settingsAdminPin = document.getElementById('settingsAdminPin') as HTMLInputElement;
 const saveSettingsBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement;
@@ -407,11 +401,8 @@ function openSettings() {
 }
 
 function showSettingsModal() {
-  settingsUrl.value = getAppsScriptUrl();
   settingsPin.value = '';
   settingsAdminPin.value = '';
-  settingsUrlStatus.textContent = '';
-  settingsUrlStatus.className = 'settings-status';
   settingsModal.style.display = 'flex';
 }
 
@@ -466,61 +457,11 @@ async function handleAdminPinSubmit() {
   showSettingsModal();
 }
 
-async function handleTestConnection() {
-  const url = settingsUrl.value.trim();
-  if (!url) {
-    settingsUrlStatus.textContent = '⚠️ Masukkan URL terlebih dahulu';
-    settingsUrlStatus.className = 'settings-status error';
-    return;
-  }
-
-  // Validate URL format
-  if (!url.startsWith('https://script.google.com/')) {
-    settingsUrlStatus.textContent = '✗ URL harus dimulai dengan https://script.google.com/';
-    settingsUrlStatus.className = 'settings-status error';
-    return;
-  }
-
-  // Save old URL, temporarily set new URL for testing
-  const oldUrl = getAppsScriptUrl();
-  try {
-    setAppsScriptUrl(url);
-  } catch {
-    settingsUrlStatus.textContent = '✗ URL tidak valid';
-    settingsUrlStatus.className = 'settings-status error';
-    return;
-  }
-
-  testConnectionBtn.disabled = true;
-  testConnectionBtn.textContent = '...';
-  settingsUrlStatus.textContent = 'Menghubungkan...';
-  settingsUrlStatus.className = 'settings-status';
-
-  const result = await testConnection();
-
-  testConnectionBtn.disabled = false;
-  testConnectionBtn.textContent = 'Test';
-
-  if (result.success) {
-    settingsUrlStatus.textContent = '✓ Koneksi berhasil!';
-    settingsUrlStatus.className = 'settings-status success';
-  } else {
-    // Restore old URL on failure
-    setAppsScriptUrl(oldUrl);
-    settingsUrlStatus.textContent = '✗ Koneksi gagal. Periksa URL dan coba lagi.';
-    settingsUrlStatus.className = 'settings-status error';
-  }
-}
+// handleTestConnection removed
 
 async function handleSaveSettings() {
-  // Save URL (with validation)
-  const url = settingsUrl.value.trim();
-  try {
-    setAppsScriptUrl(url);
-  } catch (err: any) {
-    showToast('✗ ' + err.message);
-    return;
-  }
+  // URL setting removed
+
 
   // Save Login PIN (hashed)
   const pin = settingsPin.value.trim();
@@ -1094,7 +1035,6 @@ adminPinModal.addEventListener('click', (e) => { if (e.target === adminPinModal)
 // Settings
 settingsBtn.addEventListener('click', openSettings);
 closeSettings.addEventListener('click', closeSettingsModal);
-testConnectionBtn.addEventListener('click', handleTestConnection);
 saveSettingsBtn.addEventListener('click', handleSaveSettings);
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettingsModal(); });
 
