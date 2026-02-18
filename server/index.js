@@ -27,6 +27,10 @@ app.use(express.json());
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
+// Serve uploaded/static assets (KTP images)
+const uploadsPath = path.join(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadsPath));
+
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {

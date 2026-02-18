@@ -11,6 +11,8 @@ services:
       - DB_PASSWORD=kiar_secret
       - DB_NAME=kiar
       - PORT=8080
+    volumes:
+      - ./uploads:/app/uploads
     depends_on:
       - postgres
 
