@@ -59,3 +59,8 @@ To display KTP images, you have two options:
 
 -   **Admin PIN**: Default `1234` (Change in localStorage or code).
 -   **Staff PINs**: Managed in the app settings or source code.
+
+## 🔄 Migration from Google Sheets
+
+If you have existing data in Google Sheets, you can migrate it easily.
+See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions.
