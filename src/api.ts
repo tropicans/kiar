@@ -2,14 +2,22 @@
 // API Service Layer (PostgreSQL Backend)
 // ============================================
 
-export interface RegistrantData {
-    id: string;
+export interface PassengerData {
+    id: number;
     nama: string;
-    phone: string;
-    ktpUrl: string;
+    isRegistrant?: boolean;
+    nik?: string;
+    ktpUrl?: string;
     verified: boolean;
     verifiedAt?: string;
     verifiedBy?: string;
+}
+
+export interface RegistrantData {
+    id: string;
+    phone: string;
+    ktpUrl: string;
+    passengers: PassengerData[];
 }
 
 export interface LookupResult {
@@ -45,6 +53,7 @@ export async function lookupById(id: string): Promise<LookupResult> {
  */
 export async function verifyRegistrant(
     id: string,
+    passengerIds: number[],
     verifiedBy?: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -53,6 +62,7 @@ export async function verifyRegistrant(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 id,
+                passengerIds,
                 verifiedBy: verifiedBy || 'Unknown'
             }),
         });

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KYARA — QR Admin Dashboard</title>
+    <!-- Same responsive fonts as index.html -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Using the same global stylesheet -->
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+        /* Specific styles for the Admin Dashboard */
+
+        .dashboard-container {
+            width: 100%;
+            max-width: 1200px;
+            min-width: 0;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 32px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: var(--shadow-glass);
+            margin-top: 20px;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .header-title {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .btn-download-all {
+            background: linear-gradient(135deg, var(--accent-green) 0%, #1db854 100%);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-download-all:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-download-all:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary-admin {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-glass);
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Inter', sans-serif;
+            text-decoration: none;
+        }
+
+        .btn-secondary-admin:hover {
+            background: var(--bg-glass-hover);
+            border-color: var(--border-glass-hover);
+            color: var(--text-primary);
+        }
+
+        .data-table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 12px;
+            border: 1px solid var(--border-glass);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .data-table th {
+            background: var(--bg-glass);
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .data-table tbody tr:hover {
+            background: var(--bg-glass);
+        }
+
+        .qr-cell {
+            text-align: center;
+        }
+
+        .qr-canvas {
+            background: white;
+            padding: 4px;
+            border-radius: 8px;
+            width: 80px;
+            height: 80px;
+        }
+
+        .passenger-list {
+            margin: 0;
+            padding-left: 20px;
+            color: var(--text-secondary);
+        }
+
+        .passenger-item {
+            margin-bottom: 4px;
+        }
+
+        .verified-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            margin-left: 6px;
+            background: rgba(37, 211, 102, 0.1);
+            color: var(--accent-green);
+        }
+
+        /* Loading State */
+        .loading-state {
+            text-align: center;
+            padding: 48px;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Authentication overlay uses existing styles from index.html -> #settingsPinModal */
+        .auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 10, 12, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 32px;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .dashboard-container {
+                padding: 16px;
+                margin-top: 10px;
+                border-radius: 16px;
+            }
+
+            .header-actions {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+
+            .header-actions>div {
+                width: 100%;
+            }
+
+            .header-actions>div[style*="display: flex"] {
+                flex-direction: column;
+                gap: 10px !important;
+            }
+
+            .btn-secondary-admin,
+            .btn-download-all {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .header-title {
+                font-size: 20px;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 12px;
+                font-size: 13px;
+            }
+
+            .qr-canvas {
+                width: 60px;
+                height: 60px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <!-- Animated Background -->
+        <div class="bg-mesh">
+            <div class="orb orb-1"></div>
+            <div class="orb orb-2"></div>
+            <div class="orb orb-3"></div>
+        </div>
+
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="4.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
+                        <rect x="27" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="29.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
+                        <rect x="2" y="27" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="4.5" y="29.5" width="6" height="6" rx="1" fill="currentColor" />
+                    </svg>
+                    <h1>KYARA</h1>
+                </div>
+                <div class="header-right">
+                    <!-- Theme Toggle -->
+                    <button id="themeToggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+                        <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="5" />
+                            <line x1="12" y1="1" x2="12" y2="3" />
+                            <line x1="12" y1="21" x2="12" y2="23" />
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                            <line x1="1" y1="12" x2="3" y2="12" />
+                            <line x1="21" y1="12" x2="23" y2="12" />
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                        </svg>
+                        <svg class="icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                        </svg>
+                    </button>
+                    <!-- Network Status -->
+                    <div class="network-status" id="networkStatus" title="Online">
+                        <span class="network-dot online"></span>
+                        <span class="network-label" id="networkLabel">Online</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content"
+            style="max-width: 1200px; width: 100%; min-width: 0; padding: 0 16px; box-sizing: border-box;">
+            <!-- Main Dashboard -->
+            <div class="dashboard-container" id="dashboardContent">
+                <div class="header-actions">
+                    <div>
+                        <h1 class="header-title">Data Pendaftar Mudik & QR Code</h1>
+                        <p
+                            style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
+                            Total Data: <span id="totalDataCount">0</span> Rombongan
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                        <!-- We will generate a zip of images -->
+                        <button id="btnBackToHome" class="btn-secondary-admin">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            Kembali ke Scanner
+                        </button>
+                        <button id="btnDownloadAll" class="btn-download-all" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download Semua QR (ZIP)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="data-table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">No</th>
+                                <th>QR Code</th>
+                                <th>ID Pendaftar</th>
+                                <th>No WhatsApp</th>
+                                <th>Daftar Penumpang</th>
+                                <th style="width: 100px;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td colspan="6" class="loading-state">
+                                    <div class="spinner"></div>
+                                    Memuat data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Hidden canvas template for generating high-res QR codes for download -->
+    <canvas id="qrTemplateCanvas" style="display: none;"></canvas>
+
+    <script type="module" src="/src/admin.ts"></script>
+</body>
+
+</html>

@@ -45,8 +45,12 @@ export default defineConfig({
                 drop_debugger: true,
             },
         } as Terser.MinifyOptions,
-        // Chunk splitting for better caching
+        // Chunk splitting for better caching and multiple entry points
         rollupOptions: {
+            input: {
+                main: resolve(__dirname, 'index.html'),
+                admin: resolve(__dirname, 'admin.html')
+            },
             output: {
                 manualChunks: {
                     'qr-scanner': ['html5-qrcode'],

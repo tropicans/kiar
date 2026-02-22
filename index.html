@@ -50,8 +50,6 @@
             <rect x="29.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
             <rect x="2" y="27" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
             <rect x="4.5" y="29.5" width="6" height="6" rx="1" fill="currentColor" />
-            <text x="20" y="25" font-family="Nunito,system-ui,sans-serif" font-weight="800" font-size="10"
-              fill="currentColor" text-anchor="middle" letter-spacing="0.3">KYARA</text>
           </svg>
           <h1>KYARA</h1>
         </div>
@@ -313,6 +311,12 @@
             </div>
           </div>
 
+          <!-- Passenger Checklist -->
+          <div class="passenger-checklist" id="passengerChecklist">
+            <div class="passenger-list-header">Pilih Penumpang yang Hadir:</div>
+            <div id="passengerListItems" class="passenger-list-items"></div>
+          </div>
+
           <!-- Verify Action -->
           <div class="verify-actions" id="verifyActions">
             <button id="verifyBtn" class="btn btn-verify">
@@ -404,8 +408,6 @@
             <rect x="29.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
             <rect x="2" y="27" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
             <rect x="4.5" y="29.5" width="6" height="6" rx="1" fill="currentColor" />
-            <text x="20" y="25" font-family="Nunito,system-ui,sans-serif" font-weight="800" font-size="10"
-              fill="currentColor" text-anchor="middle" letter-spacing="0.3">KYARA</text>
           </svg>
           <h2>KYARA</h2>
         </div>
@@ -493,6 +495,8 @@
           </div>
         </div>
         <div class="settings-footer">
+          <button id="btnOpenAdminDashboard" class="btn btn-secondary" style="margin-bottom: 8px;">Buka QR Dashboard
+            ➔</button>
           <button id="saveSettingsBtn" class="btn btn-primary">Simpan Pengaturan</button>
         </div>
       </div>

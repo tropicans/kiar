@@ -670,8 +670,10 @@ body {
 
 .viewfinder-frame {
   position: relative;
-  width: 220px;
-  height: 220px;
+  width: 60vw;
+  max-width: 250px;
+  height: 60vw;
+  max-height: 250px;
   flex-shrink: 0;
 }
 
@@ -1127,8 +1129,8 @@ body {
 
 .stats-section {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
 }
 
 .stat-card {
@@ -1148,7 +1150,7 @@ body {
 }
 
 .stat-number {
-  font-size: 1.8rem;
+  font-size: clamp(1.4rem, 4vw, 1.8rem);
   font-weight: 800;
   line-height: 1;
   color: var(--text-primary);
@@ -1156,7 +1158,7 @@ body {
 }
 
 .stat-label {
-  font-size: 0.68rem;
+  font-size: clamp(0.6rem, 2vw, 0.68rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1748,6 +1750,8 @@ body {
 .lock-card {
   width: 100%;
   max-width: 340px;
+  max-height: 90vh;
+  overflow-y: auto;
   text-align: center;
 }
 
@@ -1766,7 +1770,7 @@ body {
 }
 
 .lock-logo h2 {
-  font-size: 1.4rem;
+  font-size: clamp(1.2rem, 5vw, 1.4rem);
   font-weight: 800;
   background: var(--accent-gradient);
   -webkit-background-clip: text;
@@ -2035,6 +2039,90 @@ body {
 
 .settings-footer .btn {
   width: 100%;
+}
+
+/* ============================================ */
+/* Passenger Checklist */
+/* ============================================ */
+
+.passenger-checklist {
+  margin: 16px 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.passenger-list-header {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.passenger-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.passenger-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.passenger-item:hover:not(.verified) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-light);
+}
+
+.passenger-item.verified {
+  opacity: 0.7;
+  cursor: default;
+  background: rgba(46, 213, 115, 0.05);
+  border-color: rgba(46, 213, 115, 0.2);
+}
+
+.passenger-checkbox {
+  margin-right: 12px;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent-light);
+  cursor: pointer;
+}
+
+.passenger-item.verified .passenger-checkbox {
+  cursor: default;
+}
+
+.passenger-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.passenger-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.passenger-state {
+  font-size: 0.75rem;
+}
+
+.status-verified-text {
+  color: var(--success);
+}
+
+.status-pending-text {
+  color: var(--text-muted);
 }
 
 @media (max-width: 480px) {

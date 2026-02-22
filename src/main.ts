@@ -180,6 +180,7 @@ const closeSettings = document.getElementById('closeSettings') as HTMLButtonElem
 const settingsPin = document.getElementById('settingsPin') as HTMLInputElement;
 const settingsAdminPin = document.getElementById('settingsAdminPin') as HTMLInputElement;
 const saveSettingsBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement;
+const btnOpenAdminDashboard = document.getElementById('btnOpenAdminDashboard') as HTMLButtonElement;
 
 // Others
 const themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
@@ -779,7 +780,10 @@ async function handleScanResult(scannedId: string) {
 
     currentRegistrant = result.data;
     showVerifyData(result.data);
-    addToHistory(trimmedId, result.data.verified ? 'verified' : 'pending');
+    const allVerified = result.data.passengers && result.data.passengers.length > 0
+      ? result.data.passengers.every(p => p.verified)
+      : false;
+    addToHistory(trimmedId, allVerified ? 'verified' : 'pending');
     renderHistory();
 
     if (!isConfigured()) {
@@ -805,7 +809,9 @@ function showVerifyData(data: RegistrantData) {
   verifyData.style.display = 'block';
 
   regId.textContent = data.id;
-  regNama.textContent = data.nama;
+  const mainName = data.passengers && data.passengers.length > 0 ? data.passengers[0].nama : 'Tidak diketahui';
+  const groupText = data.passengers && data.passengers.length > 1 ? ` (+${data.passengers.length - 1})` : '';
+  regNama.textContent = mainName + groupText;
 
   // Phone masking — show masked, click to reveal
   const phone = data.phone || '';
@@ -822,48 +828,135 @@ function showVerifyData(data: RegistrantData) {
     }, { once: true });
   }
 
-  // === DUPLICATE GUARD ===
-  if (data.verified) {
-    statusBadge.className = 'status-badge status-verified';
-    statusBadge.innerHTML = `
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-        <polyline points="22 4 12 14.01 9 11.01"/>
-      </svg>
-      Sudah Diverifikasi
-    `;
-    verifyActions.style.display = 'none';
-    alreadyVerified.style.display = 'flex';
+  // === PASSENGER CHECKLIST ===
+  const passengerChecklist = document.getElementById('passengerChecklist') as HTMLDivElement;
+  const passengerListItems = document.getElementById('passengerListItems') as HTMLDivElement;
 
-    // Show who verified and when
-    let verifiedInfo = '';
-    if (data.verifiedBy) {
-      verifiedInfo += `oleh ${data.verifiedBy}`;
+  // Clear previous list
+  passengerListItems.innerHTML = '';
+
+  if (data.passengers && data.passengers.length > 0) {
+    passengerChecklist.style.display = 'block';
+
+    // Total stats
+    let verifiedCount = 0;
+
+    data.passengers.forEach(p => {
+      if (p.verified) verifiedCount++;
+
+      const item = document.createElement('label');
+      item.className = `passenger-item ${p.verified ? 'verified' : ''}`;
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = 'passengerCheck';
+      checkbox.value = p.id.toString();
+      checkbox.className = 'passenger-checkbox';
+      if (p.verified) {
+        checkbox.checked = true;
+        checkbox.disabled = true;
+      }
+
+      const details = document.createElement('div');
+      details.className = 'passenger-details';
+
+      const nameNode = document.createElement('div');
+      nameNode.className = 'passenger-name';
+
+      const isRegBadge = p.isRegistrant ? '<span style="font-size: 10px; background: rgba(0, 195, 255, 0.1); color: var(--accent-light); padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold;">PENDAFTAR</span>' : '';
+      nameNode.innerHTML = `<strong>${p.nama}</strong> ${isRegBadge}`;
+
+      const metaNode = document.createElement('div');
+      metaNode.style.fontSize = '12px';
+      metaNode.style.color = 'var(--text-muted)';
+      metaNode.style.marginTop = '6px';
+      metaNode.style.display = 'flex';
+      metaNode.style.alignItems = 'center';
+      metaNode.style.gap = '8px';
+
+      let metaHtml = '';
+      if (p.nik) {
+        metaHtml += `<span>NIK: ${p.nik}</span>`;
+      }
+
+      metaNode.innerHTML = metaHtml;
+
+      if (p.ktpUrl) {
+        const ktpBtn = document.createElement('button');
+        ktpBtn.type = 'button';
+        ktpBtn.className = 'btn-ghost';
+        ktpBtn.innerHTML = '📄 KTP';
+        ktpBtn.style.padding = '2px 8px';
+        ktpBtn.style.fontSize = '11px';
+        ktpBtn.style.borderRadius = '4px';
+        ktpBtn.style.border = '1px solid var(--border-glass)';
+        ktpBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          ktpModalImage.src = p.ktpUrl!;
+          ktpModal.style.display = 'flex';
+        });
+        metaNode.appendChild(ktpBtn);
+      }
+
+      const stateNode = document.createElement('div');
+      stateNode.className = 'passenger-state';
+      if (p.verified) {
+        stateNode.innerHTML = `<span class="status-verified-text">Sudah Diverifikasi ${p.verifiedAt ? formatDateTime(p.verifiedAt) : ''}</span>`;
+      } else {
+        stateNode.innerHTML = `<span class="status-pending-text">Belum Diverifikasi</span>`;
+      }
+
+      details.appendChild(nameNode);
+      if (metaNode.textContent) details.appendChild(metaNode);
+      details.appendChild(stateNode);
+
+      item.appendChild(checkbox);
+      item.appendChild(details);
+      passengerListItems.appendChild(item);
+    });
+
+    const isAllVerified = verifiedCount === data.passengers.length;
+
+    if (isAllVerified) {
+      statusBadge.className = 'status-badge status-verified';
+      statusBadge.innerHTML = `
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        Semua Penumpang Diverifikasi
+      `;
+      verifyActions.style.display = 'none';
+      alreadyVerified.style.display = 'flex';
+
+      // We don't have a single verifiedTime/By for the group, so hide it or show generic
+      verifiedTime.textContent = 'Semua kuota terpakai';
+    } else {
+      statusBadge.className = 'status-badge status-pending';
+      statusBadge.innerHTML = `
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Sisa Kuota: ${data.passengers.length - verifiedCount} Penumpang
+      `;
+      verifyActions.style.display = 'block';
+      alreadyVerified.style.display = 'none';
+      verifyBtn.disabled = false;
+      verifyBtn.innerHTML = `
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        Verifikasi Terpilih
+      `;
     }
-    if (data.verifiedAt) {
-      verifiedInfo += verifiedInfo ? ` — ${formatDateTime(data.verifiedAt)}` : formatDateTime(data.verifiedAt);
-    }
-    verifiedTime.textContent = verifiedInfo;
+
   } else {
-    statusBadge.className = 'status-badge status-pending';
-    statusBadge.innerHTML = `
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      Belum Diverifikasi
-    `;
-    verifyActions.style.display = 'block';
-    alreadyVerified.style.display = 'none';
-    verifyBtn.disabled = false;
-    verifyBtn.innerHTML = `
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-        <polyline points="22 4 12 14.01 9 11.01"/>
-      </svg>
-      Verifikasi Sekarang
-    `;
+    // Legacy fallback or empty list
+    passengerChecklist.style.display = 'none';
   }
 
   loadKtpImage(data.ktpUrl);
@@ -899,6 +992,15 @@ function hideVerify() {
 async function handleVerify() {
   if (!currentRegistrant) return;
 
+  // Gather passenger checkboxes
+  const checkboxes = document.querySelectorAll('.passenger-checkbox:checked:not([disabled])') as NodeListOf<HTMLInputElement>;
+  const selectedPassengerIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+
+  if (selectedPassengerIds.length === 0) {
+    showToast('Pilih setidaknya 1 penumpang untuk diverifikasi');
+    return;
+  }
+
   verifyBtn.disabled = true;
   verifyBtn.innerHTML = `
     <div class="loading-spinner small" style="width:18px;height:18px;border-width:2px;"></div>
@@ -906,24 +1008,34 @@ async function handleVerify() {
   `;
 
   try {
-    // Pass current staff name to verifyRegistrant
-    const result = await verifyRegistrant(currentRegistrant.id, currentStaffName);
+    // Pass passenger IDs to the backend
+    const result = await verifyRegistrant(currentRegistrant.id, selectedPassengerIds, currentStaffName);
 
     if (result.success) {
-      currentRegistrant.verified = true;
-      currentRegistrant.verifiedAt = new Date().toISOString();
-      currentRegistrant.verifiedBy = currentStaffName;
+      // Update local state without fetching again
+      const now = new Date().toISOString();
+      selectedPassengerIds.forEach(id => {
+        const p = currentRegistrant!.passengers.find(p => p.id === id);
+        if (p) {
+          p.verified = true;
+          p.verifiedAt = now;
+          p.verifiedBy = currentStaffName;
+        }
+      });
+
       showVerifyData(currentRegistrant);
 
-      addToHistory(currentRegistrant.id, 'verified');
+      // Check if group is fully verified to log history
+      const allVerified = currentRegistrant.passengers.every(p => p.verified);
+      addToHistory(currentRegistrant.id, allVerified ? 'verified' : 'pending');
       renderHistory();
 
       playVerifyBeep();
       hapticVerify();
-      showToast('✓ Berhasil diverifikasi!');
+      showToast(`✓ Berhasil memverifikasi ${selectedPassengerIds.length} penumpang!`);
       flashSuccess();
 
-      if (autoScanCheck.checked) {
+      if (autoScanCheck.checked && allVerified) {
         setTimeout(() => hideVerify(), 1500);
       }
     } else {
@@ -1036,6 +1148,12 @@ adminPinModal.addEventListener('click', (e) => { if (e.target === adminPinModal)
 settingsBtn.addEventListener('click', openSettings);
 closeSettings.addEventListener('click', closeSettingsModal);
 saveSettingsBtn.addEventListener('click', handleSaveSettings);
+settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettingsModal(); });
+
+btnOpenAdminDashboard?.addEventListener('click', () => {
+  sessionStorage.setItem('qr_admin_access', 'true');
+  window.location.href = '/admin.html';
+});
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettingsModal(); });
 
 // Network
