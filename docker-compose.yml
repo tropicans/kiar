@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    image: kiar-app
     container_name: kyara-web
     restart: unless-stopped
     ports:
@@ -18,6 +19,7 @@ services:
 
   cron:
     build: .
+    image: kiar-cron
     container_name: kyara-cron
     restart: unless-stopped
     command: /bin/sh -c "echo '🚀 Cron worker started' && while true; do node migration/migrate_mudik.js; echo '💤 Sleeping for 15 minutes...'; sleep 900; done"
