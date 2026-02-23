@@ -1614,6 +1614,56 @@ body {
    ============================================ */
 
 @media (max-width: 480px) {
+  .swal2-title {
+    font-size: 1.25rem;
+  }
+}
+
+/* ============================================
+   ADMIN DASHBOARD NEW UI/UX ADDITIONS
+   ============================================ */
+
+/* Search Bar */
+.admin-search-input {
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  border: 1px solid var(--border-glass);
+  transition: all 0.3s ease;
+  font-family: var(--font);
+}
+
+.admin-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: var(--bg-glass-hover);
+}
+
+.admin-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Pagination Controls */
+.admin-pagination .page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-family: var(--font);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.admin-pagination .page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-glass) !important;
+}
+
+@media (max-width: 480px) {
   .main-content {
     padding: 12px;
     gap: 12px;
@@ -2137,4 +2187,82 @@ body {
     padding-left: 16px;
     padding-right: 16px;
   }
+}
+
+/* Passenger Pills */
+.passenger-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.passenger-pill {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-theme="light"] .passenger-pill {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+
+.passenger-pill-utama {
+  border-left: 3px solid var(--accent-light);
+  background: linear-gradient(90deg, rgba(255, 183, 197, 0.08) 0%, transparent 100%);
+}
+
+.passenger-pill-verified {
+  border-left: 3px solid var(--success);
+  background: linear-gradient(90deg, rgba(184, 216, 186, 0.08) 0%, transparent 100%);
+}
+
+.passenger-pill .pill-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.passenger-pill .pill-name {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.passenger-pill-verified .pill-header svg {
+  color: var(--success);
+}
+
+.passenger-pill .pill-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.passenger-pill .pill-meta {
+  color: var(--text-muted);
+  font-family: monospace;
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-glass);
+}
+
+.passenger-pill .pill-ktp-link {
+  color: var(--accent-blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.passenger-pill .pill-ktp-link:hover {
+  text-decoration: underline;
+}
+
+/* Modal Overrides */
+.fullscreen-modal {
+  z-index: 10000;
 }

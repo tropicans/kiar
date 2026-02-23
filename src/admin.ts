@@ -30,8 +30,26 @@ const totalDataCount = document.getElementById('totalDataCount') as HTMLSpanElem
 const btnDownloadAll = document.getElementById('btnDownloadAll') as HTMLButtonElement;
 const themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
 
+// Search and Pagination Elements
+const searchInput = document.getElementById('searchInput') as HTMLInputElement;
+const paginationControls = document.getElementById('paginationControls') as HTMLDivElement;
+const pagStart = document.getElementById('pagStart') as HTMLSpanElement;
+const pagEnd = document.getElementById('pagEnd') as HTMLSpanElement;
+const pagTotal = document.getElementById('pagTotal') as HTMLSpanElement;
+const btnPrevPage = document.getElementById('btnPrevPage') as HTMLButtonElement;
+const btnNextPage = document.getElementById('btnNextPage') as HTMLButtonElement;
+const pageNumbersContainer = document.getElementById('pageNumbersContainer') as HTMLDivElement;
+
+// Modal Elements
+const ktpModal = document.getElementById('ktpModal') as HTMLDivElement;
+const ktpModalImage = document.getElementById('ktpModalImage') as HTMLImageElement;
+const modalCloseBtn = document.getElementById('modalCloseBtn') as HTMLButtonElement;
+
 // --- State ---
 let registrationsData: Registration[] = [];
+let filteredData: Registration[] = [];
+let currentPage = 1;
+const ITEMS_PER_PAGE = 20;
 
 btnBackToHome.addEventListener('click', () => {
     window.location.href = '/';
@@ -78,6 +96,7 @@ async function loadData() {
 
         // Filter: Hanya pendaftar yang memiliki nomor WA/HP yang valid
         registrationsData = rawData.filter(reg => reg.phone && reg.phone.trim().length > 5);
+        filteredData = [...registrationsData];
 
         renderTable();
 
@@ -92,46 +111,179 @@ async function loadData() {
     }
 }
 
+// --- Search and Pagination Logic ---
+
+searchInput.addEventListener('input', (e) => {
+    const query = (e.target as HTMLInputElement).value.toLowerCase().trim();
+    currentPage = 1; // Reset to page 1 on search
+    
+    if (!query) {
+        filteredData = [...registrationsData];
+    } else {
+        filteredData = registrationsData.filter(reg => {
+            const matchId = reg.id.toLowerCase().includes(query);
+            const matchPhone = reg.phone && reg.phone.includes(query);
+            const matchPassenger = reg.passengers.some(p => p.nama.toLowerCase().includes(query) || (p.nik && p.nik.includes(query)));
+            return matchId || matchPhone || matchPassenger;
+        });
+    }
+    
+    renderTable();
+});
+
+btnPrevPage.addEventListener('click', () => {
+    if (currentPage > 1) {
+        currentPage--;
+        renderTable();
+    }
+});
+
+btnNextPage.addEventListener('click', () => {
+    const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+    if (currentPage < totalPages) {
+        currentPage++;
+        renderTable();
+    }
+});
+
+function createPageButton(pageNum: number, isCurrent: boolean) {
+    const btn = document.createElement('button');
+    btn.className = `btn-secondary-admin page-btn ${isCurrent ? 'active' : ''}`;
+    btn.textContent = pageNum.toString();
+    btn.style.padding = '8px 12px';
+    btn.style.minWidth = '36px';
+    
+    if (isCurrent) {
+        btn.style.background = 'var(--accent-gradient)';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+    }
+    
+    btn.addEventListener('click', () => {
+        currentPage = pageNum;
+        renderTable();
+    });
+    return btn;
+}
+
+function renderPagination() {
+    const totalItems = filteredData.length;
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+    
+    if (totalItems <= ITEMS_PER_PAGE) {
+        paginationControls.style.display = 'none';
+        return;
+    }
+    
+    paginationControls.style.display = 'flex';
+    
+    const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIdx = Math.min(startIdx + ITEMS_PER_PAGE, totalItems);
+    
+    pagStart.textContent = (startIdx + 1).toString();
+    pagEnd.textContent = endIdx.toString();
+    pagTotal.textContent = totalItems.toString();
+    
+    btnPrevPage.disabled = currentPage === 1;
+    btnPrevPage.style.opacity = currentPage === 1 ? '0.5' : '1';
+    btnPrevPage.style.cursor = currentPage === 1 ? 'not-allowed' : 'pointer';
+    
+    btnNextPage.disabled = currentPage === totalPages;
+    btnNextPage.style.opacity = currentPage === totalPages ? '0.5' : '1';
+    btnNextPage.style.cursor = currentPage === totalPages ? 'not-allowed' : 'pointer';
+    
+    pageNumbersContainer.innerHTML = '';
+    
+    // Simple pagination rendering (max 5 buttons)
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    
+    if (endPage - startPage < 4) {
+        startPage = Math.max(1, endPage - 4);
+    }
+    
+    if (startPage > 1) {
+        const span = document.createElement('span');
+        span.textContent = '...';
+        span.style.color = 'var(--text-muted)';
+        span.style.padding = '0 4px';
+        pageNumbersContainer.appendChild(span);
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        pageNumbersContainer.appendChild(createPageButton(i, i === currentPage));
+    }
+    
+    if (endPage < totalPages) {
+        const span = document.createElement('span');
+        span.textContent = '...';
+        span.style.color = 'var(--text-muted)';
+        span.style.padding = '0 4px';
+        pageNumbersContainer.appendChild(span);
+    }
+}
+
 async function renderTable() {
     tableBody.innerHTML = '';
+    
+    if (filteredData.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 48px; color: var(--text-muted);">Tidak ada data yang cocok dengan pencarian</td></tr>`;
+        paginationControls.style.display = 'none';
+        return;
+    }
 
-    for (const [index, reg] of registrationsData.entries()) {
+    const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+    const paginatedItems = filteredData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+    
+    renderPagination();
+
+    for (const [idx, reg] of paginatedItems.entries()) {
+        const actualIndex = startIdx + idx + 1;
         const tr = document.createElement('tr');
 
-        // Passengers HTML
-        let passHtml = '<ul class="passenger-list">';
+        // Passengers HTML (Pill UI)
+        let passHtml = '<div class="passenger-pills">';
         reg.passengers.forEach(p => {
-            const badge = p.verified ? '<span class="verified-badge">Checked-in</span>' : '';
-            const isRegBadge = p.isRegistrant ? '<span style="font-size: 10px; background: rgba(0, 195, 255, 0.1); color: var(--accent-light); padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold;">PENDAFTAR</span>' : '';
-
-            const nikLabel = p.nik ? `NIK: ${p.nik}` : '';
-            const ktpLink = p.ktpUrl ? `<a href="${p.ktpUrl}" target="_blank" style="color: var(--accent-blue); text-decoration: none; display: inline-block; margin-left: 8px;">📄 Lihat KTP</a>` : '';
-
-            const metaInfo = (nikLabel || ktpLink) ? `<br><span style="font-size: 11px; color: var(--text-muted); display:flex; align-items:center; margin-top:4px;">${nikLabel} ${ktpLink}</span>` : '';
-
-            passHtml += `<li class="passenger-item" style="margin-bottom: 8px;">
-                            <strong>${p.nama}</strong> ${isRegBadge} ${badge}
-                            ${metaInfo}
-                         </li>`;
+            const isRegClass = p.isRegistrant ? 'passenger-pill-utama' : '';
+            const isVerifiedClass = p.verified ? 'passenger-pill-verified' : '';
+            const statusIcon = p.verified 
+                ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' 
+                : '';
+            
+            const nikLabel = p.nik ? `<span class="pill-meta">${p.nik}</span>` : '';
+            const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 KTP</a>` : '';
+            
+            passHtml += `
+                <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
+                    <div class="pill-header">
+                        <strong class="pill-name">${p.nama}</strong>
+                        ${statusIcon}
+                    </div>
+                    ${(nikLabel || ktpLink) ? `<div class="pill-footer">${nikLabel} ${ktpLink}</div>` : ''}
+                </div>
+            `;
         });
-        passHtml += '</ul>';
+        passHtml += '</div>';
 
         // Check KTP
-        const ktpLink = reg.ktpUrl ? `<a href="${reg.ktpUrl}" target="_blank" style="color: var(--accent-blue); text-decoration: none; font-size: 12px; margin-top: 4px; display: inline-block;">Lihat Identitas</a>` : '<span style="color: #666; font-size: 12px;">Tidak ada identitas</span>';
+        const ktpLink = reg.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.ktpUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Lihat Identitas</a>` : '<span style="color: var(--text-muted); font-size: 13px; display: block; margin-top: 6px;">Tidak ada identitas</span>';
 
         tr.innerHTML = `
-            <td>${index + 1}</td>
+            <td>${actualIndex}</td>
             <td class="qr-cell">
                 <canvas id="qr-canvas-${reg.id}" class="qr-canvas"></canvas>
             </td>
             <td>
-                <strong>${reg.id}</strong><br/>
+                <strong style="font-size: 15px;">${reg.id}</strong><br/>
                 ${ktpLink}
             </td>
             <td>${reg.phone || '-'}</td>
             <td>${passHtml}</td>
-            <td>
-                <button class="btn-secondary" onclick="downloadSingleQR('${reg.id}')" style="padding: 8px 12px; font-size: 12px;">Download</button>
+            <td style="text-align: center;">
+                <button class="btn-secondary-admin" onclick="downloadSingleQR('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> 
+                    Simpan
+                </button>
             </td>
         `;
 
@@ -151,6 +303,25 @@ async function renderTable() {
         }
     }
 }
+
+// --- Modal Logic ---
+(window as any).openKtpModal = (url: string) => {
+    ktpModalImage.src = url;
+    ktpModal.style.display = 'flex';
+};
+
+modalCloseBtn.addEventListener('click', () => {
+    ktpModal.style.display = 'none';
+    setTimeout(() => { ktpModalImage.src = ''; }, 300); // Clear after animation
+});
+
+// Close modal on click outside
+ktpModal.addEventListener('click', (e) => {
+    if (e.target === ktpModal) {
+        ktpModal.style.display = 'none';
+        setTimeout(() => { ktpModalImage.src = ''; }, 300);
+    }
+});
 
 // --- Download Logic ---
 
