@@ -262,7 +262,7 @@ async function renderTable() {
             const isRegBadge = p.isRegistrant ? '<span style="font-size: 10px; background: rgba(0, 195, 255, 0.1); color: var(--accent-light); padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold;">PENDAFTAR</span>' : '';
 
             const nikLabel = p.nik ? `<span class="pill-meta">${p.nik}</span>` : '';
-            const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 KTP</a>` : '';
+            const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 Lihat ID Card</a>` : '';
 
             passHtml += `
                 <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
@@ -277,7 +277,7 @@ async function renderTable() {
         passHtml += '</div>';
 
         // Check KTP
-        const ktpLink = reg.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.ktpUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Lihat Identitas</a>` : '<span style="color: var(--text-muted); font-size: 13px; display: block; margin-top: 6px;">Tidak ada identitas</span>';
+        const ktpLink = reg.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.ktpUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Lihat KK</a>` : '<span style="color: var(--text-muted); font-size: 13px; display: block; margin-top: 6px;">Tidak ada dokumen</span>';
 
         tr.innerHTML = `
             <td>${actualIndex}</td>

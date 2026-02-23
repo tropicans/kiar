@@ -329,15 +329,19 @@
                             Total Data: <span id="totalDataCount">0</span> Rombongan
                         </p>
                     </div>
-                    
+
                     <!-- Search Bar -->
                     <div class="admin-search-container" style="flex: 1; min-width: 280px; max-width: 400px;">
                         <div class="search-input-wrapper" style="position: relative; width: 100%;">
-                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;">
+                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
+                                stroke-width="2"
+                                style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;">
                                 <circle cx="11" cy="11" r="8"></circle>
                                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                             </svg>
-                            <input type="text" id="searchInput" class="settings-input admin-search-input" placeholder="Cari ID, Nama, No WA..." autocomplete="off" style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
+                            <input type="text" id="searchInput" class="settings-input admin-search-input"
+                                placeholder="Cari ID, Nama, No WA..." autocomplete="off"
+                                style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
                         </div>
                     </div>
 
@@ -364,7 +368,8 @@
 
                 <div class="data-table-wrapper">
                     <table class="data-table">
-                        <thead style="position: sticky; top: 0; z-index: 10;">
+                        <thead
+                            style="position: sticky; top: 0; z-index: 10; background: var(--bg-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
                             <tr>
                                 <th style="width: 50px;">No</th>
                                 <th style="width: 100px;">QR Code</th>
@@ -386,17 +391,27 @@
                 </div>
 
                 <!-- Pagination Controls -->
-                <div class="admin-pagination" id="paginationControls" style="display: none; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-glass);">
+                <div class="admin-pagination" id="paginationControls"
+                    style="display: none; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-glass);">
                     <div class="pagination-info" style="color: var(--text-muted); font-size: 14px;">
-                        Menampilkan <span id="pagStart">0</span> - <span id="pagEnd">0</span> dari <span id="pagTotal">0</span> data
+                        Menampilkan <span id="pagStart">0</span> - <span id="pagEnd">0</span> dari <span
+                            id="pagTotal">0</span> data
                     </div>
                     <div class="pagination-buttons" style="display: flex; gap: 8px;">
-                        <button id="btnPrevPage" class="btn-secondary-admin page-btn" style="padding: 8px 16px; min-width: unset;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                        <button id="btnPrevPage" class="btn-secondary-admin page-btn"
+                            style="padding: 8px 16px; min-width: unset;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="15 18 9 12 15 6"></polyline>
+                            </svg>
                         </button>
                         <div id="pageNumbersContainer" style="display: flex; gap: 6px; align-items: center;"></div>
-                        <button id="btnNextPage" class="btn-secondary-admin page-btn" style="padding: 8px 16px; min-width: unset;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        <button id="btnNextPage" class="btn-secondary-admin page-btn"
+                            style="padding: 8px 16px; min-width: unset;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -406,13 +421,13 @@
 
     <!-- KTP Fullscreen Modal (Reused from Main App) -->
     <div class="fullscreen-modal" id="ktpModal" style="display:none;">
-      <button class="modal-close-btn" id="modalCloseBtn" aria-label="Tutup gambar">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-      <img id="ktpModalImage" class="modal-image" alt="KTP Full View" />
+        <button class="modal-close-btn" id="modalCloseBtn" aria-label="Tutup gambar">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+        </button>
+        <img id="ktpModalImage" class="modal-image" alt="KTP Full View" />
     </div>
 
     <!-- Hidden canvas template for generating high-res QR codes for download -->
