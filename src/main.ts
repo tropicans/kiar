@@ -109,6 +109,12 @@ const manualIdInput = document.getElementById('manualIdInput') as HTMLInputEleme
 // Auto-scan
 const autoScanCheck = document.getElementById('autoScanCheck') as HTMLInputElement;
 
+// Persist Auto-Scan toggle state
+autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
+autoScanCheck.addEventListener('change', () => {
+  localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString());
+});
+
 // Viewfinder
 const viewfinderOverlay = document.getElementById('viewfinderOverlay') as HTMLDivElement;
 
