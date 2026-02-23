@@ -263,7 +263,7 @@ async function renderTable() {
             const isRegBadge = p.isRegistrant ? '<span style="font-size: 10px; background: rgba(0, 195, 255, 0.1); color: var(--accent-light); padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold;">PENDAFTAR</span>' : '';
 
             const nikLabel = p.nik ? `<span class="pill-meta">${p.nik}</span>` : '';
-            const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 Lihat ID Card</a>` : '';
+            const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 Lihat KTP</a>` : '';
 
             passHtml += `
                 <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
