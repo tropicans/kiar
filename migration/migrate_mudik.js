@@ -142,6 +142,23 @@ async function migrate() {
     const client = await pool.connect();
 
     try {
+        // 1. Backup Verified Statuses
+        console.log('\n💾 Membackup status kehadiran peserta...');
+        const backupRes = await client.query(`
+            SELECT p.nama, r.phone, p.verified_at, p.verified_by 
+            FROM passengers p
+            JOIN registrations r ON p.registration_id = r.id
+            WHERE p.verified = TRUE
+        `);
+        const verifiedBackup = backupRes.rows;
+        console.log(`✅ ${verifiedBackup.length} data kehadiran tersimpan di memori.`);
+
+        // 2. Clear Database (Reset state)
+        console.log('🧹 Membersihkan database lama...');
+        await client.query('TRUNCATE TABLE passengers, registrations CASCADE');
+
+        // 3. Insert Fresh Data
+        console.log('🚀 Memulai sinkronisasi data baru...');
         for (const row of allResults) {
             let qrCode = row['QR Code'] ? row['QR Code'].trim() : null;
             if (!qrCode) {
@@ -233,6 +250,28 @@ async function migrate() {
 
             console.log(`✅ OK (${pCount > 0 ? pCount + ' penumpang baru' : 'tidak ada perubahan'})`);
         }
+
+        // 4. Restore Verified Statuses
+        if (verifiedBackup.length > 0) {
+            console.log('\n♻️ Memulihkan status kehadiran peserta...');
+            let restoredCount = 0;
+            for (const backup of verifiedBackup) {
+                // Match by name and phone connection to ensure accuracy even if registration ID changed
+                const restoreRes = await client.query(`
+                    UPDATE passengers p
+                    SET verified = TRUE, verified_at = $1, verified_by = $2
+                    FROM registrations r
+                    WHERE p.registration_id = r.id 
+                    AND LOWER(TRIM(p.nama)) = LOWER(TRIM($3))
+                    AND r.phone = $4
+                    RETURNING p.id
+                `, [backup.verified_at, backup.verified_by, backup.nama, backup.phone]);
+                
+                restoredCount += restoreRes.rowCount;
+            }
+            console.log(`✅ ${restoredCount} status kehadiran berhasil dipulihkan.`);
+        }
+
         console.log('\n✨ Migrasi Selesai!');
     } catch (err) {
         console.error('\n❌ Error migrasi:', err);
