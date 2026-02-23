@@ -18,6 +18,7 @@ interface Registration {
     id: string;
     phone: string;
     ktpUrl: string;
+    idCardUrl?: string;
     passengers: Passenger[];
 }
 
@@ -277,7 +278,10 @@ async function renderTable() {
         passHtml += '</div>';
 
         // Check KTP
-        const ktpLink = reg.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.ktpUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Lihat KK</a>` : '<span style="color: var(--text-muted); font-size: 13px; display: block; margin-top: 6px;">Tidak ada dokumen</span>';
+        const ktpLink = reg.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.ktpUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> Lihat KK</a>` : '<span style="color: var(--text-muted); font-size: 13px; display: block; margin-top: 6px;">Tidak ada KK</span>';
+
+        // Check ID Card
+        const idCardLink = reg.idCardUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.idCardUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg> Lihat ID Card</a>` : '';
 
         tr.innerHTML = `
             <td>${actualIndex}</td>
@@ -285,8 +289,9 @@ async function renderTable() {
                 <canvas id="qr-canvas-${reg.id}" class="qr-canvas"></canvas>
             </td>
             <td>
-                <strong style="font-size: 15px;">${reg.id}</strong><br/>
+                <strong style="font-size: 15px;">${reg.id}</strong><br>
                 ${ktpLink}
+                ${idCardLink ? `<div>${idCardLink}</div>` : ''}
             </td>
             <td>${reg.phone || '-'}</td>
             <td>${passHtml}</td>

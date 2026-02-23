@@ -5,6 +5,7 @@ CREATE TABLE registrations (
     id VARCHAR(50) PRIMARY KEY,
     phone VARCHAR(50),
     ktp_url TEXT,
+    id_card_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

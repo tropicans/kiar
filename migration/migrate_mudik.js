@@ -166,26 +166,34 @@ async function migrate() {
                 }
             }
 
-            const cCardUrl = row['Kartu Keluarga'] || row['Kartu Tanda Pengenal Pegawai'];
+            const kkUrl = row['Kartu Keluarga'];
+            const idCardUrl = row['Kartu Tanda Pengenal Pegawai'];
             const pegawaiName = row['Nama Pegawai'] ? row['Nama Pegawai'].trim().toLowerCase() : '';
 
             process.stdout.write(`Sedang memproses ${qrCode}... `);
 
-            // 1. Download Identity Image (KK or Pegawai Card)
+            // 1. Download Identity Image (KK and/or Pegawai Card)
             let localKtpPath = null;
-            if (cCardUrl && cCardUrl.startsWith('http')) {
-                const filename = `${qrCode}_identity.jpg`;
-                localKtpPath = await downloadImage(cCardUrl, filename);
+            if (kkUrl && kkUrl.startsWith('http')) {
+                const filename = `${qrCode}_kk.jpg`;
+                localKtpPath = await downloadImage(kkUrl, filename);
+            }
+
+            let localIdCardPath = null;
+            if (idCardUrl && idCardUrl.startsWith('http')) {
+                const filename = `${qrCode}_idcard.jpg`;
+                localIdCardPath = await downloadImage(idCardUrl, filename);
             }
 
             // 2. Insert Parent Registration
             await client.query(`
-                        INSERT INTO registrations (id, phone, ktp_url)
-                        VALUES ($1, $2, $3)
+                        INSERT INTO registrations (id, phone, ktp_url, id_card_url)
+                        VALUES ($1, $2, $3, $4)
                         ON CONFLICT (id) DO UPDATE SET
                             phone = EXCLUDED.phone,
-                            ktp_url = COALESCE(EXCLUDED.ktp_url, registrations.ktp_url);
-                    `, [qrCode, phone, localKtpPath || cCardUrl]);
+                            ktp_url = COALESCE(EXCLUDED.ktp_url, registrations.ktp_url),
+                            id_card_url = COALESCE(EXCLUDED.id_card_url, registrations.id_card_url);
+                    `, [qrCode, phone, localKtpPath || kkUrl, localIdCardPath || idCardUrl]);
 
             // 3. Collect Passengers (up to 4)
             const potentialPassengers = [

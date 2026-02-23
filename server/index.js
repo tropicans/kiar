@@ -88,6 +88,7 @@ app.get('/api/registrations', async (req, res) => {
                 id: reg.id,
                 phone: reg.phone,
                 ktpUrl: reg.ktp_url,
+                idCardUrl: reg.id_card_url,
                 passengers: passengers
                     .filter(p => p.registration_id === reg.id)
                     .map(p => ({
