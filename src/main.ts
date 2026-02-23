@@ -789,6 +789,13 @@ async function handleScanResult(scannedId: string) {
     if (!isConfigured()) {
       showToast('⚠️ Mode demo — Google Sheet belum terhubung');
     }
+
+    // High-Speed UX: True Zero-Touch Auto-Verify
+    if (autoScanCheck.checked && !allVerified) {
+      setTimeout(() => {
+        handleVerify();
+      }, 100);
+    }
   } catch {
     showVerifyError('Terjadi kesalahan koneksi. Periksa jaringan dan coba lagi.');
     addToHistory(trimmedId, 'text');
@@ -1036,7 +1043,8 @@ async function handleVerify() {
       flashSuccess();
 
       if (autoScanCheck.checked && allVerified) {
-        setTimeout(() => hideVerify(), 1500);
+        // Fast reset for queue mode (500ms instead of 1.5s)
+        setTimeout(() => hideVerify(), 500);
       }
     } else {
       showToast('Gagal memverifikasi: ' + (result.error || 'Unknown error'));

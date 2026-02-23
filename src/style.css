@@ -1623,6 +1623,48 @@ body {
    ADMIN DASHBOARD NEW UI/UX ADDITIONS
    ============================================ */
 
+/* High-Speed Scanner Sticky Verify Button */
+.verify-actions {
+  position: sticky;
+  bottom: 0px;
+  background: var(--bg-primary);
+  padding: 16px 0;
+  z-index: 100;
+  border-top: 1px solid var(--border-glass);
+  margin-top: 16px;
+  box-shadow: 0 -10px 20px -10px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .verify-actions {
+  box-shadow: 0 -10px 20px -10px rgba(0, 0, 0, 0.05);
+}
+
+.btn-verify {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: linear-gradient(135deg, var(--success), #27ae60);
+  color: white;
+  border: none;
+  box-shadow: 0 8px 16px rgba(46, 204, 113, 0.3);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-verify:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(46, 204, 113, 0.4);
+}
+
+.btn-verify:active {
+  transform: translateY(2px) scale(0.98);
+}
+
 /* Search Bar */
 .admin-search-input {
   background: var(--bg-glass);
