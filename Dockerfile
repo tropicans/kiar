@@ -13,6 +13,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 COPY --from=build /app/dist ./dist
 COPY server ./server
+COPY migration ./migration
 COPY wait-for-db.sh ./wait-for-db.sh
 RUN sed -i 's/\r$//' ./wait-for-db.sh && chmod +x ./wait-for-db.sh
 

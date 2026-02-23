@@ -16,6 +16,22 @@ services:
     depends_on:
       - postgres
 
+  cron:
+    build: .
+    container_name: kyara-cron
+    restart: unless-stopped
+    command: /bin/sh -c "echo '🚀 Cron worker started' && while true; do node migration/migrate_mudik.js; echo '💤 Sleeping for 15 minutes...'; sleep 900; done"
+    environment:
+      - DB_HOST=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=kiar_secret
+      - DB_NAME=kiar
+      - DB_PORT=5432
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - postgres
+
   postgres:
     image: postgres:15-alpine
     container_name: kyara-db
