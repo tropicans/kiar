@@ -120,6 +120,7 @@ const verifyErrorMsg = document.getElementById('verifyErrorMsg') as HTMLParagrap
 const verifyData = document.getElementById('verifyData') as HTMLDivElement;
 const closeVerify = document.getElementById('closeVerify') as HTMLButtonElement;
 const retryScanBtn = document.getElementById('retryScanBtn') as HTMLButtonElement;
+const selectAllBtn = document.getElementById('selectAllBtn') as HTMLButtonElement | null;
 
 // Registrant Info
 const regId = document.getElementById('regId') as HTMLDivElement;
@@ -780,6 +781,8 @@ async function handleScanResult(scannedId: string) {
 
     currentRegistrant = result.data;
     showVerifyData(result.data);
+    setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+
     const allVerified = result.data.passengers && result.data.passengers.length > 0
       ? result.data.passengers.every(p => p.verified)
       : false;
@@ -924,6 +927,8 @@ function showVerifyData(data: RegistrantData) {
     });
 
     const isAllVerified = verifiedCount === data.passengers.length;
+
+    if (selectAllBtn) selectAllBtn.textContent = 'Pilih Semua';
 
     if (isAllVerified) {
       statusBadge.className = 'status-badge status-verified';
@@ -1105,6 +1110,15 @@ manualForm.addEventListener('submit', (e) => {
 closeVerify.addEventListener('click', hideVerify);
 retryScanBtn.addEventListener('click', () => { hideVerify(); startScanner(); });
 verifyBtn.addEventListener('click', handleVerify);
+if (selectAllBtn) {
+  selectAllBtn.addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('.passenger-checkbox:not([disabled])') as NodeListOf<HTMLInputElement>;
+    if (checkboxes.length === 0) return;
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => cb.checked = !allChecked);
+    selectAllBtn.textContent = allChecked ? 'Pilih Semua' : 'Batal Pilih';
+  });
+}
 
 // KTP
 ktpFullscreenBtn.addEventListener('click', openKtpFullscreen);

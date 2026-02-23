@@ -311,9 +311,14 @@
             </div>
           </div>
 
-          <!-- Passenger Checklist -->
           <div class="passenger-checklist" id="passengerChecklist">
-            <div class="passenger-list-header">Pilih Penumpang yang Hadir:</div>
+            <div class="passenger-list-header"
+              style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Pilih Penumpang yang Hadir:</span>
+              <button type="button" id="selectAllBtn" class="btn-ghost"
+                style="padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-glass);">Pilih
+                Semua</button>
+            </div>
             <div id="passengerListItems" class="passenger-list-items"></div>
           </div>
 
