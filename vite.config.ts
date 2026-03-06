@@ -28,7 +28,7 @@ function swVersionPlugin() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    // Deployed at root level on kyara.kelazz.my.id
+    // Deployed at root level on mudik.kelazz.my.id
     base: '/',
 
     plugins: [swVersionPlugin()],

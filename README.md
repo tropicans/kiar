@@ -1,4 +1,4 @@
-# KYARA (QR Code Scanner & Verifier)
+# MUDIK (QR Code Scanner & Verifier)
 
 A fast, secure, and offline-capable QR Code scanner for event verification. Now powered by **PostgreSQL** and **Docker**.
 
@@ -25,8 +25,8 @@ A fast, secure, and offline-capable QR Code scanner for event verification. Now 
     docker-compose up -d --build
     ```
     This will start:
-    -   `kyara-web`: The app (Frontend + API) at `http://localhost:8080`
-    -   `kyara-db`: PostgreSQL database
+    -   `mudik-web`: The app (Frontend + API) at `http://localhost:8080`
+    -   `mudik-db`: PostgreSQL database
 
 3.  **Access the App**: Open `http://localhost:8080` on your device.
 
@@ -35,7 +35,7 @@ A fast, secure, and offline-capable QR Code scanner for event verification. Now 
 The database is initialized automatically with `init.sql`.
 To inspect data:
 ```bash
-docker exec -it kyara-db psql -U postgres -d kiar
+docker exec -it mudik-db psql -U postgres -d kiar
 # SELECT * FROM registrants;
 ```
 

@@ -19,7 +19,7 @@ Berikut adalah langkah-langkah untuk memindahkan data peserta dan foto KTP dari 
 Script migrasi akan mencoba menghubungi database.
 *   Jika database berjalan di Docker, pastikan port database terekspos ke host (laptop Anda).
 *   Edit `.env` atau sesuaikan config di `migration/migrate.js` (default port: 5432).
-    *   *Note: Di docker-compose.yml kita belum mengekspos port 5432 ke host secara eksplisit untuk `kyara-db`. Anda mungkin perlu menambah `ports: - "5433:5432"` di `docker-compose.yml` untuk menjalankan script ini dari luar container.*
+    *   *Note: Di docker-compose.yml kita belum mengekspos port 5432 ke host secara eksplisit untuk `mudik-db`. Anda mungkin perlu menambah `ports: - "5433:5432"` di `docker-compose.yml` untuk menjalankan script ini dari luar container.*
 
 ## 3. Menjalankan Migrasi
 Buka terminal di folder project dan jalankan:

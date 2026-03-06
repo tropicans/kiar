@@ -12,6 +12,6 @@
   <rect x="144" y="124" width="14" height="14" rx="2" fill="#BDB2FF"/>
   <rect x="124" y="144" width="14" height="14" rx="2" fill="#BDB2FF"/>
   <rect x="144" y="144" width="14" height="14" rx="2" fill="#FFB7C5"/>
-  <!-- KYARA text -->
-  <text x="96" y="106" font-family="Nunito,system-ui,sans-serif" font-weight="800" font-size="32" fill="#FFB7C5" text-anchor="middle" letter-spacing="1.5">KYARA</text>
+  <!-- MUDIK text -->
+  <text x="96" y="106" font-family="Nunito,system-ui,sans-serif" font-weight="800" font-size="32" fill="#FFB7C5" text-anchor="middle" letter-spacing="1.5">MUDIK</text>
 </svg>

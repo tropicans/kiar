@@ -1,7 +1,7 @@
 {
     "id": "/",
-    "name": "KYARA — QR Scanner Verifikasi",
-    "short_name": "KYARA",
+    "name": "MUDIK — QR Scanner Verifikasi",
+    "short_name": "MUDIK",
     "description": "QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat, terintegrasi Google Sheets, dan bekerja offline.",
     "start_url": "./",
     "scope": "./",

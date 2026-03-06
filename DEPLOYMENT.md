@@ -1,11 +1,11 @@
 # Panduan Deployment ke Proxmox (LXC/VM)
 
-Panduan ini akan membantu Anda menginstall KYARA di server Proxmox menggunakan **LXC Container** (rekomendasi: ringan) atau **Virtual Machine**.
+Panduan ini akan membantu Anda menginstall MUDIK di server Proxmox menggunakan **LXC Container** (rekomendasi: ringan) atau **Virtual Machine**.
 
 ## 1. Persiapan LXC Container
 1.  Login ke Proxmox Web GUI.
 2.  Klik **Create CT** (kanan atas).
-3.  **General**: Isi Hostname (misal: `kyara-app`) dan Password.
+3.  **General**: Isi Hostname (misal: `mudik-app`) dan Password.
 4.  **Template**: Pilih template **Debian 12** atau **Ubuntu 22.04**.
 5.  **Disks**: 8GB - 10GB cukup.
 6.  **CPU/Memory**: 1-2 Core, 1024MB - 2048MB RAM.
@@ -55,7 +55,7 @@ Buka browser dan akses IP LXC Container Anda:
 `http://ALAMAT_IP_LXC:8080` (misal: `http://192.168.1.100:8080`).
 
 ## 6. (Optional) Reverse Proxy & HTTPS
-Jika ingin menggunakan domain (misal `kyara.example.com`) dan HTTPS:
+Jika ingin menggunakan domain (misal `mudik.example.com`) dan HTTPS:
 1.  Install **Nginx Proxy Manager** di container terpisah atau gunakan Nginx di container yang sama.
 2.  Arahkan domain ke IP Proxmox/Container.
 3.  Proxy Pass port 80/443 ke `http://IP-CONTAINER:8080`.

@@ -1,11 +1,11 @@
-# 🚀 Deployment Guide — KYARA QR Scanner
+# 🚀 Deployment Guide — MUDIK QR Scanner
 
-Panduan deploy aplikasi KYARA ke production server (Proxmox) dengan domain via Cloudflare.
+Panduan deploy aplikasi MUDIK ke production server (Proxmox) dengan domain via Cloudflare.
 
 ## Prerequisites
 
 - **Server**: Proxmox VE dengan LXC/VM yang sudah ada Docker
-- **Domain**: `kyara.kelazz.my.id` (dikelola di Cloudflare)
+- **Domain**: `mudik.kelazz.my.id` (dikelola di Cloudflare)
 - **Tools**: Docker + Docker Compose terinstall di server
 
 ## 🐳 Deploy dengan Docker
@@ -32,7 +32,7 @@ Aplikasi akan berjalan di `http://<server-ip>:8080`.
 docker compose ps
 
 # Cek logs
-docker compose logs -f kyara
+docker compose logs -f mudik
 
 # Test akses
 curl http://localhost:8080
@@ -52,7 +52,7 @@ docker compose up -d --build
 1. Login ke [Cloudflare Dashboard](https://dash.cloudflare.com)
 2. Pilih domain `kelazz.my.id`
 3. Tambah **A Record**:
-   - **Name**: `kyara`
+   - **Name**: `mudik`
    - **Content**: IP publik server Proxmox
    - **Proxy status**: Proxied (orange cloud ☁️)
 
@@ -68,11 +68,11 @@ Jika tidak ingin expose IP publik:
 
 ```bash
 # Install cloudflared di server
-cloudflared tunnel create kyara
-cloudflared tunnel route dns kyara kyara.kelazz.my.id
+cloudflared tunnel create mudik
+cloudflared tunnel route dns mudik mudik.kelazz.my.id
 
 # Jalankan tunnel
-cloudflared tunnel --url http://localhost:8080 run kyara
+cloudflared tunnel --url http://localhost:8080 run mudik
 ```
 
 ## 🔧 Deploy Manual (Tanpa Docker)
@@ -87,15 +87,15 @@ npm run build
 ### 2. Copy ke Server
 
 ```bash
-scp -r dist/* user@server:/var/www/kyara/
+scp -r dist/* user@server:/var/www/mudik/
 ```
 
 ### 3. Setup Nginx
 
 ```bash
 # Copy config
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/kyara
-sudo ln -s /etc/nginx/sites-available/kyara /etc/nginx/sites-enabled/
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/mudik
+sudo ln -s /etc/nginx/sites-available/mudik /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 

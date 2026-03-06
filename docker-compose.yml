@@ -1,8 +1,8 @@
 services:
   app:
     build: .
-    image: kyara-app
-    container_name: kyara-web
+    image: mudik-app
+    container_name: mudik-web
     restart: unless-stopped
     ports:
       - "8085:8080"
@@ -19,8 +19,8 @@ services:
 
   cron:
     build: .
-    image: kyara-cron
-    container_name: kyara-cron
+    image: mudik-cron
+    container_name: mudik-cron
     restart: unless-stopped
     command: /bin/sh -c "echo '🚀 Cron worker started' && while true; do node migration/migrate_mudik.js; echo '💤 Sleeping for 15 minutes...'; sleep 900; done"
     environment:
@@ -36,7 +36,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: kyara-db
+    container_name: mudik-db
     restart: unless-stopped
     ports:
       - "5435:5432"
