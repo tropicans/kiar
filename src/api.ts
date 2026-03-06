@@ -18,12 +18,19 @@ export interface RegistrantData {
     phone: string;
     ktpUrl: string;
     passengers: PassengerData[];
+    matchedPassengerIds?: number[];
 }
 
 export interface LookupResult {
     success: boolean;
     data?: RegistrantData;
     error?: string;
+}
+
+export interface AmbiguousLookupResult {
+    success: false;
+    error: string;
+    matches: string[];
 }
 
 /**
@@ -35,6 +42,37 @@ export async function lookupById(id: string): Promise<LookupResult> {
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        return { success: true, data };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Lookup registrant by last 4 digits of NIK
+ */
+export async function lookupByNikSuffix(last4: string): Promise<LookupResult | AmbiguousLookupResult> {
+    try {
+        const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last4)}`);
+
+        if (response.status === 404) {
+            return { success: false, error: 'Data tidak ditemukan' };
+        }
+
+        if (response.status === 409) {
+            const data = await response.json();
+            return {
+                success: false,
+                error: data.error || 'Ditemukan lebih dari satu data',
+                matches: Array.isArray(data.matches) ? data.matches : [],
+            };
         }
 
         if (!response.ok) {

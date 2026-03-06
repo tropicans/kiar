@@ -1,7 +1,6 @@
 import './style.css';
-import { Html5Qrcode } from 'html5-qrcode';
 import {
-  lookupById,
+  lookupByNikSuffix,
   verifyRegistrant,
   isConfigured,
   type RegistrantData,
@@ -36,13 +35,8 @@ const LOCKOUT_DURATION = 30000; // 30 seconds
 // State
 // ============================================
 
-let html5Qrcode: Html5Qrcode | null = null;
-let isScanning = false;
-let isScannerStarting = false;
 let currentRegistrant: RegistrantData | null = null;
 let currentStaffName = '';
-let lastScannedText = '';
-let lastScanTime = 0;
 
 // Rate limiter state
 let loginFailedAttempts = 0;
@@ -97,11 +91,6 @@ function playVerifyBeep() {
 // DOM Elements
 // ============================================
 
-// Scanner
-const startScanBtn = document.getElementById('startScanBtn') as HTMLButtonElement;
-const stopScanBtn = document.getElementById('stopScanBtn') as HTMLButtonElement;
-const scannerPlaceholder = document.getElementById('scannerPlaceholder') as HTMLDivElement;
-
 // Manual Input
 const manualForm = document.getElementById('manualForm') as HTMLFormElement;
 const manualIdInput = document.getElementById('manualIdInput') as HTMLInputElement;
@@ -114,9 +103,6 @@ autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
 autoScanCheck.addEventListener('change', () => {
   localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString());
 });
-
-// Viewfinder
-const viewfinderOverlay = document.getElementById('viewfinderOverlay') as HTMLDivElement;
 
 // Verification Panel
 const verifySection = document.getElementById('verifySection') as HTMLElement;
@@ -385,6 +371,7 @@ async function handleUnlock() {
   lockError.style.display = 'none';
   updateStaffBadge();
   showToast(`Selamat datang, ${currentStaffName}!`);
+  setTimeout(() => focusLookupInput(true), 80);
 }
 
 // ============================================
@@ -614,7 +601,7 @@ function removeFromHistory(id: string) {
 }
 
 function clearHistory() {
-  if (!confirm('Hapus semua riwayat scan?')) return;
+  if (!confirm('Hapus semua riwayat pencarian?')) return;
   localStorage.removeItem(HISTORY_KEY);
   renderHistory();
   showToast('Riwayat dihapus');
@@ -698,117 +685,75 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
-// ============================================
-// Scanner
-// ============================================
+function normalizeNikSuffix(raw: string): string {
+  return raw.replace(/\D/g, '').slice(-4);
+}
 
-async function startScanner() {
-  if (isScanning || isScannerStarting) return;
-  isScannerStarting = true;
-  startScanBtn.disabled = true;
-
-  try {
-    html5Qrcode = new Html5Qrcode('reader');
-    const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
-
-    scannerPlaceholder.style.display = 'none';
-    startScanBtn.style.display = 'none';
-    stopScanBtn.style.display = 'flex';
-    viewfinderOverlay.style.display = 'flex';
-
-    await html5Qrcode.start(
-      { facingMode: 'environment' }, config, onScanSuccess,
-      () => { } // ignore no-QR frames
-    );
-    isScanning = true;
-  } catch (err) {
-    console.error('Scanner error:', err);
-    showToast('Gagal mengakses kamera. Pastikan izin kamera diberikan.');
-    resetScanner();
-  } finally {
-    isScannerStarting = false;
-    startScanBtn.disabled = false;
+function focusLookupInput(select = false) {
+  manualIdInput.focus();
+  if (select && manualIdInput.value) {
+    manualIdInput.select();
   }
-}
-
-async function stopScanner() {
-  if (!html5Qrcode || !isScanning) return;
-  try {
-    await html5Qrcode.stop();
-    html5Qrcode.clear();
-  } catch (err) { console.error('Stop scanner error:', err); }
-  resetScanner();
-}
-
-function resetScanner() {
-  isScanning = false;
-  scannerPlaceholder.style.display = 'flex';
-  startScanBtn.style.display = 'flex';
-  stopScanBtn.style.display = 'none';
-  viewfinderOverlay.style.display = 'none';
-}
-
-function onScanSuccess(decodedText: string) {
-  // Debounce: ignore duplicate scans within 3 seconds
-  const now = Date.now();
-  if (decodedText === lastScannedText && now - lastScanTime < 3000) return;
-  lastScannedText = decodedText;
-  lastScanTime = now;
-
-  playScanBeep();
-  flashSuccess();
-  stopScanner();
-  handleScanResult(decodedText);
 }
 
 // ============================================
 // Verification Flow
 // ============================================
 
-async function handleScanResult(scannedId: string) {
-  const trimmedId = scannedId.trim();
-  if (!trimmedId) return;
+async function handleScanResult(rawInput: string) {
+  const nikSuffix = normalizeNikSuffix(rawInput.trim());
+  if (nikSuffix.length !== 4) {
+    showToast('Masukkan 4 digit terakhir NIK');
+    focusLookupInput(true);
+    return;
+  }
 
   verifySection.style.display = 'block';
   verifyLoading.style.display = 'flex';
   verifyError.style.display = 'none';
   verifyData.style.display = 'none';
-  verifySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  verifySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const result = await lookupById(trimmedId);
+    const result = await lookupByNikSuffix(nikSuffix);
 
     if (!result.success || !result.data) {
-      showVerifyError(result.error || 'Data tidak ditemukan untuk ID: ' + trimmedId);
-      addToHistory(trimmedId, 'text');
+      if ('matches' in result && result.matches.length > 0) {
+        showVerifyError(`${result.error} (grup: ${result.matches.join(', ')})`);
+      } else {
+        showVerifyError(result.error || `Data tidak ditemukan untuk 4 digit: ${nikSuffix}`);
+      }
+      addToHistory(nikSuffix, 'text');
       renderHistory();
+      focusLookupInput(true);
       return;
     }
 
     currentRegistrant = result.data;
     showVerifyData(result.data);
-    setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
 
     const allVerified = result.data.passengers && result.data.passengers.length > 0
-      ? result.data.passengers.every(p => p.verified)
+      ? result.data.passengers.every((p) => p.verified)
       : false;
-    addToHistory(trimmedId, allVerified ? 'verified' : 'pending');
+    addToHistory(nikSuffix, allVerified ? 'verified' : 'pending');
     renderHistory();
 
     if (!isConfigured()) {
       showToast('⚠️ Mode demo — Google Sheet belum terhubung');
     }
 
-    // High-Speed UX: True Zero-Touch Auto-Verify
+    // High-Speed UX: auto-verify matched passengers in queue mode
     if (autoScanCheck.checked && !allVerified) {
       setTimeout(() => {
         handleVerify();
-      }, 100);
+      }, 80);
     }
   } catch {
     showVerifyError('Terjadi kesalahan koneksi. Periksa jaringan dan coba lagi.');
-    addToHistory(trimmedId, 'text');
+    addToHistory(nikSuffix, 'text');
     renderHistory();
+    focusLookupInput(true);
   }
 }
 
@@ -853,6 +798,7 @@ function showVerifyData(data: RegistrantData) {
 
   if (data.passengers && data.passengers.length > 0) {
     passengerChecklist.style.display = 'block';
+    const matchedIds = new Set(data.matchedPassengerIds || []);
 
     // Total stats
     let verifiedCount = 0;
@@ -871,6 +817,8 @@ function showVerifyData(data: RegistrantData) {
       if (p.verified) {
         checkbox.checked = true;
         checkbox.disabled = true;
+      } else if (matchedIds.has(p.id)) {
+        checkbox.checked = true;
       }
 
       const details = document.createElement('div');
@@ -892,7 +840,9 @@ function showVerifyData(data: RegistrantData) {
 
       let metaHtml = '';
       if (p.nik) {
-        metaHtml += `<span>NIK: ${p.nik}</span>`;
+        const nikDigits = p.nik.replace(/\D/g, '');
+        const nikSuffix = nikDigits.length >= 4 ? nikDigits.slice(-4) : nikDigits;
+        metaHtml += `<span>NIK: ****${nikSuffix}</span>`;
       }
 
       metaNode.innerHTML = metaHtml;
@@ -998,9 +948,7 @@ function loadKtpImage(url: string) {
 function hideVerify() {
   verifySection.style.display = 'none';
   currentRegistrant = null;
-  if (autoScanCheck.checked) {
-    setTimeout(() => startScanner(), 300);
-  }
+  focusLookupInput(true);
 }
 
 // ============================================
@@ -1053,9 +1001,10 @@ async function handleVerify() {
       showToast(`✓ Berhasil memverifikasi ${selectedPassengerIds.length} penumpang!`);
       flashSuccess();
 
-      if (autoScanCheck.checked && allVerified) {
-        // Fast reset for queue mode (500ms instead of 1.5s)
-        setTimeout(() => hideVerify(), 500);
+      if (autoScanCheck.checked) {
+        setTimeout(() => hideVerify(), 250);
+      } else {
+        verifyBtn.focus();
       }
     } else {
       showToast('Gagal memverifikasi: ' + (result.error || 'Unknown error'));
@@ -1098,23 +1047,27 @@ function closeKtpFullscreen() {
 // Event Listeners
 // ============================================
 
-// Scanner
-startScanBtn.addEventListener('click', startScanner);
-stopScanBtn.addEventListener('click', stopScanner);
-
 // Manual Input
 manualForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const id = manualIdInput.value.trim();
-  if (!id) { showToast('Masukkan ID terlebih dahulu'); manualIdInput.focus(); return; }
+  if (!id) { showToast('Masukkan 4 digit terakhir NIK'); focusLookupInput(); return; }
   playScanBeep();
   handleScanResult(id);
   manualIdInput.value = '';
 });
 
+manualIdInput.addEventListener('input', () => {
+  const suffix = normalizeNikSuffix(manualIdInput.value);
+  manualIdInput.value = suffix;
+});
+
 // Verification
 closeVerify.addEventListener('click', hideVerify);
-retryScanBtn.addEventListener('click', () => { hideVerify(); startScanner(); });
+retryScanBtn.addEventListener('click', () => {
+  hideVerify();
+  showToast('Masukkan 4 digit NIK berikutnya');
+});
 verifyBtn.addEventListener('click', handleVerify);
 if (selectAllBtn) {
   selectAllBtn.addEventListener('click', () => {
@@ -1191,9 +1144,40 @@ window.addEventListener('offline', () => { updateNetworkStatus(); showToast('⚠
 // Keyboard
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    hideVerify();
     closeKtpFullscreen();
     closeAdminPinModal();
     closeSettingsModal();
+    return;
+  }
+
+  if (e.key === 'F2') {
+    e.preventDefault();
+    focusLookupInput(true);
+    return;
+  }
+
+  if (verifySection.style.display === 'block') {
+    if (e.key === 'Enter' && document.activeElement !== manualIdInput && !verifyBtn.disabled) {
+      e.preventDefault();
+      handleVerify();
+      return;
+    }
+
+    if ((e.key === 'a' || e.key === 'A') && selectAllBtn) {
+      e.preventDefault();
+      selectAllBtn.click();
+      return;
+    }
+
+    if (/^[1-9]$/.test(e.key)) {
+      const idx = parseInt(e.key, 10) - 1;
+      const checkboxes = document.querySelectorAll('.passenger-checkbox:not([disabled])') as NodeListOf<HTMLInputElement>;
+      if (idx >= 0 && idx < checkboxes.length) {
+        e.preventDefault();
+        checkboxes[idx].checked = !checkboxes[idx].checked;
+      }
+    }
   }
 });
 
@@ -1216,6 +1200,10 @@ updateNetworkStatus();
 renderHistory();
 initLockScreen();
 
+if (!isPinEnabled()) {
+  setTimeout(() => focusLookupInput(), 80);
+}
+
 // Persist auto-scan preference
 autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
 autoScanCheck.addEventListener('change', () => {
@@ -1236,5 +1224,5 @@ if (scannerSection) {
 }
 
 if (!isConfigured()) {
-  console.log('%c⚠️ QR Scan: Mode Demo — buka Settings untuk set URL Google Sheet', 'color: #feca57; font-weight: bold');
+  console.log('%c⚠️ Mode Demo — buka Settings untuk set URL Google Sheet', 'color: #feca57; font-weight: bold');
 }

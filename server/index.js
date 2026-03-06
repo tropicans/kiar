@@ -67,6 +67,78 @@ app.get('/api/lookup/:id', async (req, res) => {
     }
 });
 
+// API: Lookup Registrant by last 4 NIK digits
+app.get('/api/lookup-nik/:last4', async (req, res) => {
+    try {
+        const { last4 } = req.params;
+        const normalized = (last4 || '').replace(/\D/g, '').slice(-4);
+
+        if (normalized.length !== 4) {
+            return res.status(400).json({ error: 'Input harus 4 digit terakhir NIK' });
+        }
+
+        const regMatchResult = await pool.query(
+            `SELECT DISTINCT p.registration_id
+             FROM passengers p
+             WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 4) = $1
+             ORDER BY p.registration_id ASC`,
+            [normalized]
+        );
+
+        if (regMatchResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Data tidak ditemukan' });
+        }
+
+        if (regMatchResult.rows.length > 1) {
+            return res.status(409).json({
+                error: 'Lebih dari satu grup cocok untuk 4 digit ini. Periksa KTP lalu lanjutkan manual.',
+                matches: regMatchResult.rows.map(r => r.registration_id),
+            });
+        }
+
+        const registrationId = regMatchResult.rows[0].registration_id;
+
+        const regResult = await pool.query('SELECT * FROM registrations WHERE id = $1', [registrationId]);
+        if (regResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Data tidak ditemukan' });
+        }
+
+        const passengersResult = await pool.query(
+            'SELECT * FROM passengers WHERE registration_id = $1 ORDER BY id ASC',
+            [registrationId]
+        );
+
+        const matchedPassengerIds = passengersResult.rows
+            .filter((p) => {
+                const nikDigits = String(p.nik || '').replace(/\D/g, '');
+                return nikDigits.length >= 4 && nikDigits.slice(-4) === normalized;
+            })
+            .map((p) => p.id);
+
+        const data = regResult.rows[0];
+
+        res.json({
+            id: data.id,
+            phone: data.phone,
+            ktpUrl: data.ktp_url,
+            matchedPassengerIds,
+            passengers: passengersResult.rows.map((p) => ({
+                id: p.id,
+                nama: p.nama,
+                isRegistrant: p.is_registrant,
+                nik: p.nik,
+                ktpUrl: p.ktp_url,
+                verified: p.verified,
+                verifiedAt: p.verified_at,
+                verifiedBy: p.verified_by,
+            })),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API: Get All Registrations (for Admin Dashboard)
 app.get('/api/registrations', async (req, res) => {
     try {

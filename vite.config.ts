@@ -50,12 +50,7 @@ export default defineConfig({
             input: {
                 main: resolve(__dirname, 'index.html'),
                 admin: resolve(__dirname, 'admin.html')
-            },
-            output: {
-                manualChunks: {
-                    'qr-scanner': ['html5-qrcode'],
-                },
-            },
+            }
         },
     },
 

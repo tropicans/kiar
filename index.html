@@ -112,71 +112,25 @@
           <div class="stat-label">Pending</div>
         </div>
       </section>
-      <!-- Scanner Section -->
+      <!-- Lookup Section -->
       <section class="scanner-section glass-card" id="scannerSection">
         <div class="section-header">
           <h2>
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="14" y2="18" />
             </svg>
-            Scanner
+            Verifikasi 4 Digit NIK
           </h2>
         </div>
-        <!-- Big Scan CTA -->
-        <div class="scan-cta-container">
-          <button id="startScanBtn" class="btn btn-scan-cta">
-            <svg class="scan-cta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-            <span>Mulai Scan</span>
-            <span class="scan-cta-hint">Arahkan kamera ke QR code</span>
-          </button>
-          <button id="stopScanBtn" class="btn btn-stop-cta" style="display:none;">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-            Stop Scanner
-          </button>
-        </div>
-        <!-- Auto-scan toggle -->
+
         <label for="autoScanCheck" class="auto-scan-toggle">
           <input type="checkbox" id="autoScanCheck" />
           <div class="toggle-slider"></div>
-          <span class="toggle-label">Mode Antrian (Auto-Verify & Scan Lanjut)</span>
+          <span class="toggle-label">Mode Antrian (Auto-Verify & Lanjut Input Berikutnya)</span>
         </label>
-        <div id="scannerContainer" class="scanner-container">
-          <div class="scanner-placeholder" id="scannerPlaceholder">
-            <svg class="placeholder-icon" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="4" y="4" width="24" height="24" rx="4" />
-              <rect x="52" y="4" width="24" height="24" rx="4" />
-              <rect x="4" y="52" width="24" height="24" rx="4" />
-              <rect x="52" y="52" width="12" height="12" rx="2" />
-              <rect x="68" y="52" width="8" height="8" rx="1" />
-              <rect x="52" y="68" width="8" height="8" rx="1" />
-              <rect x="68" y="68" width="8" height="8" rx="1" />
-              <line x1="36" y1="8" x2="44" y2="8" />
-              <line x1="40" y1="4" x2="40" y2="12" />
-            </svg>
-            <p>Tekan <strong>"Mulai Scan"</strong> untuk membuka kamera</p>
-            <p class="placeholder-hint">Arahkan kamera ke QR code</p>
-          </div>
-          <div id="reader" class="scanner-reader"></div>
-          <!-- Viewfinder Overlay (Google Authenticator style) -->
-          <div class="viewfinder-overlay" id="viewfinderOverlay" style="display:none;">
-            <div class="viewfinder-mask"></div>
-            <div class="viewfinder-frame">
-              <div class="vf-corner vf-tl"></div>
-              <div class="vf-corner vf-tr"></div>
-              <div class="vf-corner vf-bl"></div>
-              <div class="vf-corner vf-br"></div>
-              <div class="vf-scanline"></div>
-            </div>
-            <p class="viewfinder-hint">Arahkan QR code ke dalam kotak</p>
-          </div>
-        </div>
-        <!-- Manual ID Input -->
+
         <div class="manual-input">
           <div class="manual-input-header">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -184,19 +138,20 @@
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            <span>Input ID Manual</span>
+            <span>Ketik 4 Digit Terakhir NIK</span>
           </div>
           <form id="manualForm" class="manual-form">
             <input type="text" id="manualIdInput" class="manual-input-field"
-              placeholder="Ketik ID registrasi, misal REG-001" autocomplete="off" />
+              placeholder="Contoh: 5566" autocomplete="off" inputmode="numeric" maxlength="4" />
             <button type="submit" class="btn btn-primary manual-submit-btn">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              Cari
+              Cari NIK
             </button>
           </form>
+          <p class="placeholder-hint" style="margin-top: 10px;">Shortcut: <strong>F2</strong> fokus input, <strong>1-9</strong> pilih penumpang, <strong>A</strong> pilih semua, <strong>Enter</strong> verifikasi</p>
         </div>
       </section>
 
@@ -233,7 +188,7 @@
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
           <p id="verifyErrorMsg">Data tidak ditemukan</p>
-          <button id="retryScanBtn" class="btn btn-primary">Scan Ulang</button>
+          <button id="retryScanBtn" class="btn btn-primary">Input Ulang</button>
         </div>
 
         <!-- Data Display -->
@@ -365,7 +320,7 @@
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
-            Riwayat Scan
+            Riwayat Pencarian
             <span class="history-count" id="historyCount">0</span>
           </h2>
           <div class="history-header-right">
@@ -390,8 +345,8 @@
               <line x1="20" y1="32" x2="38" y2="32" />
               <line x1="20" y1="40" x2="32" y2="40" />
             </svg>
-            <p>Belum ada riwayat scan</p>
-            <p class="empty-hint">Hasil scan akan muncul di sini</p>
+            <p>Belum ada riwayat pencarian</p>
+            <p class="empty-hint">Input 4 digit NIK akan muncul di sini</p>
           </div>
         </div>
       </section>
