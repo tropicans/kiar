@@ -1,0 +1,22 @@
+services:
+  app-dev:
+    image: node:20-alpine
+    container_name: mudik-dev
+    profiles:
+      - dev
+    working_dir: /app
+    command: >-
+      /bin/sh -c 'if [ ! -x node_modules/.bin/vite ]; then npm ci; fi;
+      npm run dev -- --host 0.0.0.0 --port 5173'
+    environment:
+      - VITE_PROXY_TARGET=http://app:8080
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app
+      - node_modules_cache:/app/node_modules
+    depends_on:
+      - app
+
+volumes:
+  node_modules_cache:
