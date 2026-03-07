@@ -2632,9 +2632,14 @@ body {
 }
 
 .manual-input-field {
-  letter-spacing: 0.24em;
-  text-align: center;
+  letter-spacing: 0.03em;
+  text-align: left;
   font-variant-numeric: tabular-nums;
+}
+
+.manual-input-field[data-lookup-mode="nik"] {
+  letter-spacing: 0.18em;
+  text-align: center;
 }
 
 .network-status,

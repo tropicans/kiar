@@ -40,6 +40,12 @@ export interface NikSearchResult {
     error?: string;
 }
 
+export interface NameSearchResult {
+    success: boolean;
+    passengers?: PassengerData[];
+    error?: string;
+}
+
 /**
  * Lookup registrant by ID from the backend API
  */
@@ -102,6 +108,36 @@ export async function searchPassengersByNikSuffix(last6: string): Promise<NikSea
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        return {
+            success: true,
+            passengers: Array.isArray(data.passengers) ? data.passengers : [],
+        };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Search passengers by name
+ */
+export async function searchPassengersByName(query: string): Promise<NameSearchResult> {
+    try {
+        const response = await fetch(`/api/search-name?q=${encodeURIComponent(query)}`);
+
+        if (response.status === 404) {
+            return { success: false, error: 'Data tidak ditemukan' };
+        }
+
+        if (response.status === 400) {
+            const data = await response.json();
+            return { success: false, error: data.error || 'Input nama tidak valid' };
         }
 
         if (!response.ok) {

@@ -35,14 +35,6 @@ const REQUIRED_HEADERS = [
 
 const UPPERCASE_NAME_TOKENS = new Set(['TNI', 'POLRI', 'PT', 'CV', 'H', 'HJ']);
 
-function parseCsvUrls(value) {
-    if (!value) return [];
-    return value
-        .split(/[\n,]/)
-        .map((v) => v.trim())
-        .filter(Boolean);
-}
-
 function parseCsvFilePaths(value) {
     if (!value) return [];
     return value
@@ -54,29 +46,15 @@ function parseCsvFilePaths(value) {
 const CSV_SOURCES = (() => {
     const listFromFilePaths = parseCsvFilePaths(process.env.CSV_FILE_PATHS);
     if (listFromFilePaths.length > 0) {
-        return listFromFilePaths.map((filePath) => ({ type: 'file', value: filePath }));
+        return listFromFilePaths;
     }
 
     const singleFromFilePath = (process.env.CSV_FILE_PATH || '').trim();
     if (singleFromFilePath) {
-        return [{ type: 'file', value: singleFromFilePath }];
+        return [singleFromFilePath];
     }
 
-    if (fs.existsSync(DEFAULT_CSV_FILE_PATH)) {
-        return [{ type: 'file', value: DEFAULT_CSV_FILE_PATH }];
-    }
-
-    const listFromCsvUrls = parseCsvUrls(process.env.CSV_URLS);
-    if (listFromCsvUrls.length > 0) {
-        return listFromCsvUrls.map((url) => ({ type: 'url', value: url }));
-    }
-
-    const singleFromCsvUrl = (process.env.CSV_URL || '').trim();
-    if (singleFromCsvUrl) {
-        return [{ type: 'url', value: singleFromCsvUrl }];
-    }
-
-    return [{ type: 'file', value: DEFAULT_CSV_FILE_PATH }];
+    return [DEFAULT_CSV_FILE_PATH];
 })();
 
 const CSV_SKIP_LINES = Number.parseInt(process.env.CSV_SKIP_LINES || '0', 10);
@@ -220,28 +198,6 @@ async function readCsvRowsFromPath(filePath, sourceLabel, sheetIndex) {
     return parsedRows;
 }
 
-async function downloadCSV(url, index) {
-    try {
-        const response = await axios({
-            url,
-            method: 'GET',
-            responseType: 'stream',
-        });
-
-        const filePath = path.join(__dirname, `temp_data_${index}.csv`);
-        const writer = fs.createWriteStream(filePath);
-        response.data.pipe(writer);
-
-        return await new Promise((resolve, reject) => {
-            writer.on('finish', () => resolve(filePath));
-            writer.on('error', reject);
-        });
-    } catch (error) {
-        console.error(`❌ Gagal mendownload CSV dari URL ${url}:`, error.message);
-        return null;
-    }
-}
-
 async function downloadImage(url, filename) {
     if (!url || !url.startsWith('http')) return null;
 
@@ -383,32 +339,11 @@ async function migrate() {
     const allResults = [];
 
     for (let i = 0; i < CSV_SOURCES.length; i++) {
-        const source = CSV_SOURCES[i];
-        const sourceLabel = source.type === 'url'
-            ? `URL #${i + 1}`
-            : `File #${i + 1}`;
-
-        if (source.type === 'url') {
-            console.log(`\n📥 Mendownload data dari ${sourceLabel}: ${source.value}`);
-            const csvPath = await downloadCSV(source.value, i);
-            if (!csvPath) continue;
-
-            try {
-                const rows = await readCsvRowsFromPath(csvPath, sourceLabel, i + 1);
-                allResults.push(...rows);
-            } finally {
-                try {
-                    fs.unlinkSync(csvPath);
-                } catch {
-                    // noop
-                }
-            }
-            continue;
-        }
-
-        const absolutePath = path.isAbsolute(source.value)
-            ? source.value
-            : path.resolve(process.cwd(), source.value);
+        const sourcePath = CSV_SOURCES[i];
+        const sourceLabel = `File #${i + 1}`;
+        const absolutePath = path.isAbsolute(sourcePath)
+            ? sourcePath
+            : path.resolve(process.cwd(), sourcePath);
 
         if (!fs.existsSync(absolutePath)) {
             console.error(`❌ File CSV tidak ditemukan: ${absolutePath}`);

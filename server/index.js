@@ -31,11 +31,32 @@ app.use(express.static(distPath));
 const uploadsPath = path.join(__dirname, '../uploads');
 app.use('/uploads', express.static(uploadsPath));
 
+function normalizeNameQuery(rawValue) {
+    return String(rawValue || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s'-.]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function mapPassengerRow(passenger) {
+    return {
+        id: passenger.id,
+        registrationId: passenger.registration_id,
+        nama: passenger.nama,
+        nik: passenger.nik,
+        ktpUrl: passenger.ktp_url,
+        verified: passenger.verified,
+        verifiedAt: passenger.verified_at,
+        verifiedBy: passenger.verified_by,
+    };
+}
+
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query('SELECT * FROM registrations WHERE id = $1', [id]);
+        const result = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
@@ -44,7 +65,7 @@ app.get('/api/lookup/:id', async (req, res) => {
         const data = result.rows[0];
 
         // Fetch passengers
-        const passengersResult = await pool.query('SELECT * FROM passengers WHERE registration_id = $1 ORDER BY id ASC', [id]);
+        const passengersResult = await pool.query('SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC', [id]);
 
         res.json({
             id: data.id,
@@ -80,7 +101,8 @@ app.get('/api/lookup-nik/:last6', async (req, res) => {
         const regMatchResult = await pool.query(
             `SELECT DISTINCT p.registration_id
              FROM passengers p
-             WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
+             WHERE COALESCE(p.active, TRUE) = TRUE
+               AND RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
              ORDER BY p.registration_id ASC`,
             [normalized]
         );
@@ -98,13 +120,13 @@ app.get('/api/lookup-nik/:last6', async (req, res) => {
 
         const registrationId = regMatchResult.rows[0].registration_id;
 
-        const regResult = await pool.query('SELECT * FROM registrations WHERE id = $1', [registrationId]);
+        const regResult = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [registrationId]);
         if (regResult.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
         }
 
         const passengersResult = await pool.query(
-            'SELECT * FROM passengers WHERE registration_id = $1 ORDER BY id ASC',
+            'SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC',
             [registrationId]
         );
 
@@ -160,7 +182,8 @@ app.get('/api/search-nik/:last6', async (req, res) => {
                 p.verified_at,
                 p.verified_by
             FROM passengers p
-            WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
+            WHERE COALESCE(p.active, TRUE) = TRUE
+              AND RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
             ORDER BY p.nama ASC, p.id ASC`,
             [normalized]
         );
@@ -171,16 +194,62 @@ app.get('/api/search-nik/:last6', async (req, res) => {
 
         res.json({
             last6: normalized,
-            passengers: result.rows.map((p) => ({
-                id: p.id,
-                registrationId: p.registration_id,
-                nama: p.nama,
-                nik: p.nik,
-                ktpUrl: p.ktp_url,
-                verified: p.verified,
-                verifiedAt: p.verified_at,
-                verifiedBy: p.verified_by,
-            })),
+            passengers: result.rows.map(mapPassengerRow),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// API: Search passengers by name
+app.get('/api/search-name', async (req, res) => {
+    try {
+        const rawQuery = String(req.query.q || '');
+        const normalized = normalizeNameQuery(rawQuery);
+
+        if (normalized.length < 3) {
+            return res.status(400).json({ error: 'Masukkan minimal 3 karakter nama pemudik' });
+        }
+
+        const containsPattern = `%${normalized}%`;
+        const startsPattern = `${normalized}%`;
+
+        const result = await pool.query(
+            `SELECT
+                p.id,
+                p.registration_id,
+                p.nama,
+                p.nik,
+                p.ktp_url,
+                p.verified,
+                p.verified_at,
+                p.verified_by,
+                lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) AS search_name
+            FROM passengers p
+            WHERE COALESCE(p.active, TRUE) = TRUE
+              AND lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) LIKE $2
+            ORDER BY
+                CASE
+                    WHEN lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) = $1 THEN 0
+                    WHEN lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) LIKE $3 THEN 1
+                    ELSE 2
+                END,
+                length(lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g'))) ASC,
+                p.nama ASC,
+                p.id ASC
+            LIMIT 20`,
+            [normalized, containsPattern, startsPattern]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Data tidak ditemukan' });
+        }
+
+        res.json({
+            query: rawQuery.trim(),
+            normalizedQuery: normalized,
+            passengers: result.rows.map(mapPassengerRow),
         });
     } catch (err) {
         console.error(err);
@@ -192,7 +261,7 @@ app.get('/api/search-nik/:last6', async (req, res) => {
 app.get('/api/registrations', async (req, res) => {
     try {
         // Fetch all registrations
-        const regResult = await pool.query('SELECT * FROM registrations ORDER BY id ASC');
+        const regResult = await pool.query('SELECT * FROM registrations WHERE COALESCE(active, TRUE) = TRUE ORDER BY id ASC');
         if (regResult.rows.length === 0) {
             return res.json([]);
         }
@@ -200,7 +269,7 @@ app.get('/api/registrations', async (req, res) => {
         const registrations = regResult.rows;
 
         // Fetch all passengers
-        const passResult = await pool.query('SELECT * FROM passengers ORDER BY registration_id ASC, id ASC');
+        const passResult = await pool.query('SELECT * FROM passengers WHERE COALESCE(active, TRUE) = TRUE ORDER BY registration_id ASC, id ASC');
         const passengers = passResult.rows;
 
         // Group passengers by registration_id

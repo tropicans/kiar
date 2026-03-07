@@ -1,6 +1,7 @@
 import './style.css';
 import {
   lookupById,
+  searchPassengersByName,
   searchPassengersByNikSuffix,
   verifyPassengers,
   isConfigured,
@@ -38,7 +39,8 @@ const LOCKOUT_DURATION = 30000; // 30 seconds
 // ============================================
 
 let currentMatches: PassengerData[] = [];
-let currentSearchSuffix = '';
+let currentSearchValue = '';
+let currentSearchMode: 'nik' | 'name' = 'nik';
 let currentStaffName = '';
 let selectedByNamePassengerId: number | null = null;
 let groupVerifyOnConfirm: (() => void) | null = null;
@@ -688,7 +690,7 @@ function createHistoryItemElement(item: ScanHistoryItem): HTMLDivElement {
 
   el.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('.history-delete-btn')) return;
-    handleScanResult(item.text);
+    handleScanResult(parseHistoryLookupText(item.text));
   });
 
   const deleteBtn = el.querySelector('.history-delete-btn') as HTMLButtonElement;
@@ -712,11 +714,39 @@ function normalizeNikSuffix(raw: string): string {
   return raw.replace(/\D/g, '').slice(-6);
 }
 
+function normalizeLookupText(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+function detectLookupMode(rawInput: string): 'nik' | 'name' {
+  const normalizedText = normalizeLookupText(rawInput);
+  return /^\d{6}$/.test(normalizedText) ? 'nik' : 'name';
+}
+
+function getLookupPrompt(mode: 'nik' | 'name') {
+  return mode === 'nik'
+    ? 'Masukkan 6 digit terakhir NIK'
+    : 'Masukkan minimal 3 karakter nama pemudik';
+}
+
+function getLookupHistoryLabel(mode: 'nik' | 'name', value: string) {
+  return mode === 'nik' ? value : `Nama: ${value}`;
+}
+
+function parseHistoryLookupText(value: string): string {
+  return value.startsWith('Nama: ') ? value.slice(6) : value;
+}
+
 function focusLookupInput(select = false) {
   manualIdInput.focus();
   if (select && manualIdInput.value) {
     manualIdInput.select();
   }
+}
+
+function updateManualInputMode(mode: 'nik' | 'name') {
+  manualIdInput.dataset.lookupMode = mode;
+  manualIdInput.inputMode = mode === 'nik' ? 'numeric' : 'text';
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -743,11 +773,26 @@ function collapseHistoryPanel() {
 // ============================================
 
 async function handleScanResult(rawInput: string) {
-  const nikSuffix = normalizeNikSuffix(rawInput.trim());
-  if (nikSuffix.length !== 6) {
-    showToast('Masukkan 6 digit terakhir NIK');
-    focusLookupInput(true);
-    return;
+  const inputValue = normalizeLookupText(rawInput);
+  const lookupMode = detectLookupMode(inputValue);
+
+  if (lookupMode === 'nik') {
+    const nikSuffix = normalizeNikSuffix(inputValue);
+    if (nikSuffix.length !== 6) {
+      showToast(getLookupPrompt('nik'));
+      focusLookupInput(true);
+      return;
+    }
+    currentSearchMode = 'nik';
+    currentSearchValue = nikSuffix;
+  } else {
+    if (inputValue.length < 3) {
+      showToast(getLookupPrompt('name'));
+      focusLookupInput(true);
+      return;
+    }
+    currentSearchMode = 'name';
+    currentSearchValue = inputValue;
   }
 
   verifySection.style.display = 'block';
@@ -759,23 +804,24 @@ async function handleScanResult(rawInput: string) {
   verifySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const result = await searchPassengersByNikSuffix(nikSuffix);
+    const result = currentSearchMode === 'nik'
+      ? await searchPassengersByNikSuffix(currentSearchValue)
+      : await searchPassengersByName(currentSearchValue);
 
     if (!result.success || !result.passengers || result.passengers.length === 0) {
-      showVerifyError(result.error || `Data tidak ditemukan untuk 6 digit: ${nikSuffix}`);
-      addToHistory(nikSuffix, 'text');
+      showVerifyError(result.error || `Data tidak ditemukan untuk ${currentSearchValue}`);
+      addToHistory(getLookupHistoryLabel(currentSearchMode, currentSearchValue), 'text');
       renderHistory();
       focusLookupInput(true);
       return;
     }
 
     currentMatches = result.passengers;
-    currentSearchSuffix = nikSuffix;
-    showVerifyData(result.passengers, nikSuffix);
+    showVerifyData(result.passengers);
     setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
 
     const allVerified = result.passengers.every((p) => p.verified);
-    addToHistory(nikSuffix, allVerified ? 'verified' : 'pending');
+    addToHistory(getLookupHistoryLabel(currentSearchMode, currentSearchValue), allVerified ? 'verified' : 'pending');
     renderHistory();
 
     if (!isConfigured()) {
@@ -791,7 +837,7 @@ async function handleScanResult(rawInput: string) {
     }
   } catch {
     showVerifyError('Terjadi kesalahan koneksi. Periksa jaringan dan coba lagi.');
-    addToHistory(nikSuffix, 'text');
+    addToHistory(getLookupHistoryLabel(currentSearchMode, currentSearchValue), 'text');
     renderHistory();
     focusLookupInput(true);
   }
@@ -853,16 +899,20 @@ function updateVerifyButtonState() {
     : 'Semua Sudah Diverifikasi';
 }
 
-function showVerifyData(passengers: PassengerData[], nikSuffix: string) {
+function showVerifyData(passengers: PassengerData[]) {
   selectedByNamePassengerId = null;
   verifyLoading.style.display = 'none';
   verifyError.style.display = 'none';
   verifyData.style.display = 'block';
   infoGrid.style.display = 'none';
 
-  regId.textContent = `6 Digit NIK: ${nikSuffix}`;
+  regId.textContent = currentSearchMode === 'nik'
+    ? `6 Digit NIK: ${currentSearchValue}`
+    : `Nama Pemudik: ${currentSearchValue}`;
   regNama.textContent = `${passengers.length} orang cocok`;
-  regPhone.textContent = 'Klik nama untuk tampilkan KTP';
+  regPhone.textContent = currentSearchMode === 'nik'
+    ? 'Klik nama untuk tampilkan KTP'
+    : 'Hasil nama perlu dicek manual dengan KTP';
 
   const passengerChecklist = document.getElementById('passengerChecklist') as HTMLDivElement;
   const passengerListItems = document.getElementById('passengerListItems') as HTMLDivElement;
@@ -1010,7 +1060,8 @@ function hideVerify() {
   closeGroupVerifyModal();
   selectedByNamePassengerId = null;
   currentMatches = [];
-  currentSearchSuffix = '';
+  currentSearchValue = '';
+  currentSearchMode = 'nik';
   focusLookupInput(true);
 }
 
@@ -1102,10 +1153,10 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
         }
       });
 
-      showVerifyData(currentMatches, currentSearchSuffix);
+      showVerifyData(currentMatches);
 
       const allVerified = currentMatches.every((p) => p.verified);
-      addToHistory(currentSearchSuffix || manualIdInput.value.trim(), allVerified ? 'verified' : 'pending');
+      addToHistory(getLookupHistoryLabel(currentSearchMode, currentSearchValue || manualIdInput.value.trim()), allVerified ? 'verified' : 'pending');
       renderHistory();
 
       playVerifyBeep();
@@ -1230,23 +1281,33 @@ function closeKtpFullscreen() {
 // Manual Input
 manualForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  const id = manualIdInput.value.trim();
-  if (!id) { showToast('Masukkan 6 digit terakhir NIK'); focusLookupInput(); return; }
+  const id = normalizeLookupText(manualIdInput.value);
+  if (!id) { showToast('Masukkan 6 digit NIK atau nama pemudik'); focusLookupInput(); return; }
   playScanBeep();
   handleScanResult(id);
   manualIdInput.value = '';
 });
 
 manualIdInput.addEventListener('input', () => {
-  const suffix = normalizeNikSuffix(manualIdInput.value);
-  manualIdInput.value = suffix;
+  const rawValue = manualIdInput.value;
+  const collapsedValue = rawValue.replace(/\s+/g, ' ');
+  const compactValue = collapsedValue.trim();
+
+  if (/^\d+$/.test(compactValue)) {
+    manualIdInput.value = normalizeNikSuffix(compactValue);
+    updateManualInputMode('nik');
+    return;
+  }
+
+  manualIdInput.value = collapsedValue.replace(/^\s+/, '');
+  updateManualInputMode('name');
 });
 
 // Verification
 closeVerify.addEventListener('click', hideVerify);
 retryScanBtn.addEventListener('click', () => {
   hideVerify();
-  showToast('Masukkan 6 digit NIK berikutnya');
+  showToast('Masukkan 6 digit NIK atau nama pemudik berikutnya');
 });
 verifyBtn.addEventListener('click', () => { void handleVerify(); });
 verifyAllBtn.addEventListener('click', handleVerifyAllUnverified);
@@ -1403,6 +1464,7 @@ updateNetworkStatus();
 renderHistory();
 initLockScreen();
 loadKtpImage('');
+updateManualInputMode('name');
 
 if (!isPinEnabled()) {
   setTimeout(() => focusLookupInput(), 80);
