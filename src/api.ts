@@ -4,6 +4,7 @@
 
 export interface PassengerData {
     id: number;
+    registrationId?: string;
     nama: string;
     isRegistrant?: boolean;
     nik?: string;
@@ -33,6 +34,12 @@ export interface AmbiguousLookupResult {
     matches: string[];
 }
 
+export interface NikSearchResult {
+    success: boolean;
+    passengers?: PassengerData[];
+    error?: string;
+}
+
 /**
  * Lookup registrant by ID from the backend API
  */
@@ -56,11 +63,11 @@ export async function lookupById(id: string): Promise<LookupResult> {
 }
 
 /**
- * Lookup registrant by last 4 digits of NIK
+ * Lookup registrant by last 6 digits of NIK
  */
-export async function lookupByNikSuffix(last4: string): Promise<LookupResult | AmbiguousLookupResult> {
+export async function lookupByNikSuffix(last6: string): Promise<LookupResult | AmbiguousLookupResult> {
     try {
-        const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last4)}`);
+        const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last6)}`);
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -87,6 +94,31 @@ export async function lookupByNikSuffix(last4: string): Promise<LookupResult | A
 }
 
 /**
+ * Search passengers by last 6 digits of NIK
+ */
+export async function searchPassengersByNikSuffix(last6: string): Promise<NikSearchResult> {
+    try {
+        const response = await fetch(`/api/search-nik/${encodeURIComponent(last6)}`);
+
+        if (response.status === 404) {
+            return { success: false, error: 'Data tidak ditemukan' };
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        return {
+            success: true,
+            passengers: Array.isArray(data.passengers) ? data.passengers : [],
+        };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
+/**
  * Verify a registrant
  */
 export async function verifyRegistrant(
@@ -100,6 +132,35 @@ export async function verifyRegistrant(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 id,
+                passengerIds,
+                verifiedBy: verifiedBy || 'Unknown'
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            return { success: false, error: result.error || `HTTP ${response.status}` };
+        }
+
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Verify selected passengers directly
+ */
+export async function verifyPassengers(
+    passengerIds: number[],
+    verifiedBy?: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const response = await fetch('/api/verify-passengers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 passengerIds,
                 verifiedBy: verifiedBy || 'Unknown'
             }),

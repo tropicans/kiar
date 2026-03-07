@@ -54,11 +54,23 @@ export default defineConfig({
         },
     },
 
-    // Dev server settings
-    server: {
-        port: 5173,
-        open: true,
-    },
+  // Dev server settings
+  server: {
+    port: 5173,
+    open: process.env.VITE_OPEN === 'true',
+    proxy: process.env.VITE_PROXY_TARGET
+      ? {
+        '/api': {
+          target: process.env.VITE_PROXY_TARGET,
+          changeOrigin: true,
+        },
+        '/uploads': {
+          target: process.env.VITE_PROXY_TARGET,
+          changeOrigin: true,
+        },
+      }
+      : undefined,
+  },
 
     preview: {
         port: 4173,

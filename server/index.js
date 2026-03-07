@@ -67,20 +67,20 @@ app.get('/api/lookup/:id', async (req, res) => {
     }
 });
 
-// API: Lookup Registrant by last 4 NIK digits
-app.get('/api/lookup-nik/:last4', async (req, res) => {
+// API: Lookup Registrant by last 6 NIK digits
+app.get('/api/lookup-nik/:last6', async (req, res) => {
     try {
-        const { last4 } = req.params;
-        const normalized = (last4 || '').replace(/\D/g, '').slice(-4);
+        const { last6 } = req.params;
+        const normalized = (last6 || '').replace(/\D/g, '').slice(-6);
 
-        if (normalized.length !== 4) {
-            return res.status(400).json({ error: 'Input harus 4 digit terakhir NIK' });
+        if (normalized.length !== 6) {
+            return res.status(400).json({ error: 'Input harus 6 digit terakhir NIK' });
         }
 
         const regMatchResult = await pool.query(
             `SELECT DISTINCT p.registration_id
              FROM passengers p
-             WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 4) = $1
+             WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
              ORDER BY p.registration_id ASC`,
             [normalized]
         );
@@ -91,7 +91,7 @@ app.get('/api/lookup-nik/:last4', async (req, res) => {
 
         if (regMatchResult.rows.length > 1) {
             return res.status(409).json({
-                error: 'Lebih dari satu grup cocok untuk 4 digit ini. Periksa KTP lalu lanjutkan manual.',
+                error: 'Lebih dari satu grup cocok untuk 6 digit ini. Periksa KTP lalu lanjutkan manual.',
                 matches: regMatchResult.rows.map(r => r.registration_id),
             });
         }
@@ -111,7 +111,7 @@ app.get('/api/lookup-nik/:last4', async (req, res) => {
         const matchedPassengerIds = passengersResult.rows
             .filter((p) => {
                 const nikDigits = String(p.nik || '').replace(/\D/g, '');
-                return nikDigits.length >= 4 && nikDigits.slice(-4) === normalized;
+                return nikDigits.length >= 6 && nikDigits.slice(-6) === normalized;
             })
             .map((p) => p.id);
 
@@ -126,6 +126,55 @@ app.get('/api/lookup-nik/:last4', async (req, res) => {
                 id: p.id,
                 nama: p.nama,
                 isRegistrant: p.is_registrant,
+                nik: p.nik,
+                ktpUrl: p.ktp_url,
+                verified: p.verified,
+                verifiedAt: p.verified_at,
+                verifiedBy: p.verified_by,
+            })),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// API: Search passengers by last 6 NIK digits
+app.get('/api/search-nik/:last6', async (req, res) => {
+    try {
+        const { last6 } = req.params;
+        const normalized = (last6 || '').replace(/\D/g, '').slice(-6);
+
+        if (normalized.length !== 6) {
+            return res.status(400).json({ error: 'Input harus 6 digit terakhir NIK' });
+        }
+
+        const result = await pool.query(
+            `SELECT
+                p.id,
+                p.registration_id,
+                p.nama,
+                p.nik,
+                p.ktp_url,
+                p.verified,
+                p.verified_at,
+                p.verified_by
+            FROM passengers p
+            WHERE RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
+            ORDER BY p.nama ASC, p.id ASC`,
+            [normalized]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Data tidak ditemukan' });
+        }
+
+        res.json({
+            last6: normalized,
+            passengers: result.rows.map((p) => ({
+                id: p.id,
+                registrationId: p.registration_id,
+                nama: p.nama,
                 nik: p.nik,
                 ktpUrl: p.ktp_url,
                 verified: p.verified,
@@ -226,6 +275,49 @@ app.post('/api/verify', async (req, res) => {
 
             await client.query('COMMIT');
             res.json({ success: true, verifiedAt: new Date() });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// API: Verify selected passengers (cross-registration)
+app.post('/api/verify-passengers', async (req, res) => {
+    try {
+        const { passengerIds, verifiedBy } = req.body;
+
+        if (!Array.isArray(passengerIds) || passengerIds.length === 0) {
+            return res.status(400).json({ error: 'Tidak ada peserta yang dipilih' });
+        }
+
+        const uniqueIds = [...new Set(passengerIds.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id)))];
+        if (uniqueIds.length === 0) {
+            return res.status(400).json({ error: 'ID peserta tidak valid' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const now = new Date();
+            const updateRes = await client.query(
+                `UPDATE passengers
+                 SET verified = TRUE,
+                     verified_at = COALESCE(verified_at, $1),
+                     verified_by = COALESCE(verified_by, $2)
+                 WHERE id = ANY($3::int[])
+                 RETURNING id`,
+                [now, verifiedBy || 'Unknown', uniqueIds]
+            );
+
+            await client.query('COMMIT');
+            res.json({ success: true, updatedCount: updateRes.rowCount || 0, verifiedAt: now });
         } catch (e) {
             await client.query('ROLLBACK');
             throw e;
