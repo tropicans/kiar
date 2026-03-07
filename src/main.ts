@@ -1,9 +1,10 @@
 import './style.css';
 import {
-  lookupByNikSuffix,
-  verifyRegistrant,
+  lookupById,
+  searchPassengersByNikSuffix,
+  verifyPassengers,
   isConfigured,
-  type RegistrantData,
+  type PassengerData,
 } from './api';
 
 // ============================================
@@ -27,6 +28,7 @@ const PIN_KEY = 'qrscan_pin';
 const ADMIN_PIN_KEY = 'qrscan_admin_pin';
 const ACTIVE_STAFF_KEY = 'qrscan_active_staff';
 const AUTO_SCAN_KEY = 'qrscan_autoscan';
+const COMPACT_MODE_KEY = 'qrscan_compact_mode';
 const MAX_HISTORY = 50;
 const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 30000; // 30 seconds
@@ -35,8 +37,12 @@ const LOCKOUT_DURATION = 30000; // 30 seconds
 // State
 // ============================================
 
-let currentRegistrant: RegistrantData | null = null;
+let currentMatches: PassengerData[] = [];
+let currentSearchSuffix = '';
 let currentStaffName = '';
+let selectedByNamePassengerId: number | null = null;
+let groupVerifyOnConfirm: (() => void) | null = null;
+let groupVerifyOnCancel: (() => void) | null = null;
 
 // Rate limiter state
 let loginFailedAttempts = 0;
@@ -97,6 +103,7 @@ const manualIdInput = document.getElementById('manualIdInput') as HTMLInputEleme
 
 // Auto-scan
 const autoScanCheck = document.getElementById('autoScanCheck') as HTMLInputElement;
+const compactModeCheck = document.getElementById('compactModeCheck') as HTMLInputElement;
 
 // Persist Auto-Scan toggle state
 autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
@@ -118,13 +125,23 @@ const selectAllBtn = document.getElementById('selectAllBtn') as HTMLButtonElemen
 const regId = document.getElementById('regId') as HTMLDivElement;
 const regNama = document.getElementById('regNama') as HTMLDivElement;
 const regPhone = document.getElementById('regPhone') as HTMLDivElement;
+const infoGrid = document.querySelector('.info-grid') as HTMLDivElement;
 const statusBadge = document.getElementById('statusBadge') as HTMLSpanElement;
 const verifyBtn = document.getElementById('verifyBtn') as HTMLButtonElement;
+const verifyAllBtn = document.getElementById('verifyAllBtn') as HTMLButtonElement;
 const verifyActions = document.getElementById('verifyActions') as HTMLDivElement;
 const alreadyVerified = document.getElementById('alreadyVerified') as HTMLDivElement;
 const verifiedTime = document.getElementById('verifiedTime') as HTMLSpanElement;
+const groupVerifyModal = document.getElementById('groupVerifyModal') as HTMLDivElement;
+const groupVerifyMessage = document.getElementById('groupVerifyMessage') as HTMLParagraphElement;
+const groupVerifyListWrap = document.getElementById('groupVerifyListWrap') as HTMLDivElement;
+const groupVerifyList = document.getElementById('groupVerifyList') as HTMLDivElement;
+const groupVerifyConfirm = document.getElementById('groupVerifyConfirm') as HTMLButtonElement;
+const groupVerifyCancel = document.getElementById('groupVerifyCancel') as HTMLButtonElement;
+const closeGroupVerify = document.getElementById('closeGroupVerify') as HTMLButtonElement;
 
 // KTP
+const ktpContainer = document.getElementById('ktpContainer') as HTMLDivElement;
 const ktpImage = document.getElementById('ktpImage') as HTMLImageElement;
 const ktpLoading = document.getElementById('ktpLoading') as HTMLDivElement;
 const ktpFullscreenBtn = document.getElementById('ktpFullscreenBtn') as HTMLButtonElement;
@@ -151,6 +168,7 @@ const networkDot = networkStatus.querySelector('.network-dot') as HTMLSpanElemen
 // Staff Badge
 const staffBadge = document.getElementById('staffBadge') as HTMLDivElement;
 const staffBadgeName = document.getElementById('staffBadgeName') as HTMLSpanElement;
+const compactModeBadge = document.getElementById('compactModeBadge') as HTMLDivElement;
 
 // Lock Screen
 const lockScreen = document.getElementById('lockScreen') as HTMLDivElement;
@@ -196,6 +214,11 @@ function toggleTheme() {
   const next = current === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem(THEME_KEY, next);
+}
+
+function applyCompactMode(enabled: boolean) {
+  document.body.classList.toggle('compact-mode', enabled);
+  compactModeBadge.style.display = enabled ? 'inline-flex' : 'none';
 }
 
 // ============================================
@@ -480,7 +503,7 @@ async function handleSaveSettings() {
   showToast('✓ Pengaturan tersimpan');
 
   if (!isConfigured()) {
-    console.log('%c⚠️ Mode Demo — Google Sheet belum terhubung', 'color: #feca57; font-weight: bold');
+    console.log('%c⚠️ Mode Demo — backend data belum terhubung', 'color: #feca57; font-weight: bold');
   }
 }
 
@@ -686,7 +709,7 @@ function escapeHtml(text: string): string {
 }
 
 function normalizeNikSuffix(raw: string): string {
-  return raw.replace(/\D/g, '').slice(-4);
+  return raw.replace(/\D/g, '').slice(-6);
 }
 
 function focusLookupInput(select = false) {
@@ -696,55 +719,72 @@ function focusLookupInput(select = false) {
   }
 }
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
+function collapseHistoryPanel() {
+  historyList.classList.add('history-collapsed');
+  const historyToggle = document.getElementById('historyToggle') as HTMLDivElement | null;
+  if (historyToggle) {
+    historyToggle.setAttribute('aria-expanded', 'false');
+  }
+  const historyChevron = document.getElementById('historyChevron') as HTMLElement | null;
+  if (historyChevron) {
+    historyChevron.classList.remove('rotated');
+  }
+}
+
 // ============================================
 // Verification Flow
 // ============================================
 
 async function handleScanResult(rawInput: string) {
   const nikSuffix = normalizeNikSuffix(rawInput.trim());
-  if (nikSuffix.length !== 4) {
-    showToast('Masukkan 4 digit terakhir NIK');
+  if (nikSuffix.length !== 6) {
+    showToast('Masukkan 6 digit terakhir NIK');
     focusLookupInput(true);
     return;
   }
 
   verifySection.style.display = 'block';
+  document.body.classList.add('verify-active');
+  collapseHistoryPanel();
   verifyLoading.style.display = 'flex';
   verifyError.style.display = 'none';
   verifyData.style.display = 'none';
   verifySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
-    const result = await lookupByNikSuffix(nikSuffix);
+    const result = await searchPassengersByNikSuffix(nikSuffix);
 
-    if (!result.success || !result.data) {
-      if ('matches' in result && result.matches.length > 0) {
-        showVerifyError(`${result.error} (grup: ${result.matches.join(', ')})`);
-      } else {
-        showVerifyError(result.error || `Data tidak ditemukan untuk 4 digit: ${nikSuffix}`);
-      }
+    if (!result.success || !result.passengers || result.passengers.length === 0) {
+      showVerifyError(result.error || `Data tidak ditemukan untuk 6 digit: ${nikSuffix}`);
       addToHistory(nikSuffix, 'text');
       renderHistory();
       focusLookupInput(true);
       return;
     }
 
-    currentRegistrant = result.data;
-    showVerifyData(result.data);
+    currentMatches = result.passengers;
+    currentSearchSuffix = nikSuffix;
+    showVerifyData(result.passengers, nikSuffix);
     setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
 
-    const allVerified = result.data.passengers && result.data.passengers.length > 0
-      ? result.data.passengers.every((p) => p.verified)
-      : false;
+    const allVerified = result.passengers.every((p) => p.verified);
     addToHistory(nikSuffix, allVerified ? 'verified' : 'pending');
     renderHistory();
 
     if (!isConfigured()) {
-      showToast('⚠️ Mode demo — Google Sheet belum terhubung');
+      showToast('⚠️ Mode demo — backend data belum terhubung');
     }
 
     // High-Speed UX: auto-verify matched passengers in queue mode
-    if (autoScanCheck.checked && !allVerified) {
+    const selectedCount = document.querySelectorAll('.passenger-checkbox:checked:not([disabled])').length;
+    if (autoScanCheck.checked && !allVerified && selectedCount > 0) {
       setTimeout(() => {
         handleVerify();
       }, 80);
@@ -764,49 +804,77 @@ function showVerifyError(message: string) {
   verifyErrorMsg.textContent = message;
 }
 
-function showVerifyData(data: RegistrantData) {
+function updateSelectAllButtonState() {
+  if (!selectAllBtn) return;
+  const checkboxes = document.querySelectorAll('.passenger-checkbox:not([disabled])') as NodeListOf<HTMLInputElement>;
+  if (checkboxes.length === 0) {
+    selectAllBtn.disabled = true;
+    selectAllBtn.textContent = 'Pilih Semua Belum Verified';
+    selectAllBtn.title = 'Pilih semua penumpang yang belum verified';
+    selectAllBtn.setAttribute('aria-label', 'Pilih semua penumpang yang belum verified');
+    updateVerifyButtonState();
+    return;
+  }
+
+  selectAllBtn.disabled = false;
+  const allChecked = Array.from(checkboxes).every((cb) => cb.checked);
+  selectAllBtn.textContent = allChecked ? 'Batal Pilih' : 'Pilih Semua Belum Verified';
+  selectAllBtn.title = allChecked
+    ? 'Batalkan pilihan semua penumpang'
+    : 'Pilih semua penumpang yang belum verified';
+  selectAllBtn.setAttribute(
+    'aria-label',
+    allChecked
+      ? 'Batalkan pilihan semua penumpang'
+      : 'Pilih semua penumpang yang belum verified',
+  );
+  updateVerifyButtonState();
+}
+
+function updateVerifyButtonState() {
+  const selectedCount = document.querySelectorAll('.passenger-checkbox:checked:not([disabled])').length;
+  const unverifiedCount = document.querySelectorAll('.passenger-checkbox:not([disabled])').length;
+  const effectiveSelectedCount = selectedCount > 0
+    ? selectedCount
+    : (selectedByNamePassengerId ? 1 : 0);
+
+  verifyBtn.disabled = effectiveSelectedCount === 0;
+  verifyBtn.innerHTML = `
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+      <polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+    ${effectiveSelectedCount > 0 ? `Verifikasi (${effectiveSelectedCount})` : 'Pilih penumpang dulu'}
+  `;
+
+  verifyAllBtn.disabled = unverifiedCount === 0;
+  verifyAllBtn.textContent = unverifiedCount > 0
+    ? `Verifikasi Semua Belum Verified (${unverifiedCount})`
+    : 'Semua Sudah Diverifikasi';
+}
+
+function showVerifyData(passengers: PassengerData[], nikSuffix: string) {
+  selectedByNamePassengerId = null;
   verifyLoading.style.display = 'none';
   verifyError.style.display = 'none';
   verifyData.style.display = 'block';
+  infoGrid.style.display = 'none';
 
-  regId.textContent = data.id;
-  const mainName = data.passengers && data.passengers.length > 0 ? data.passengers[0].nama : 'Tidak diketahui';
-  const groupText = data.passengers && data.passengers.length > 1 ? ` (+${data.passengers.length - 1})` : '';
-  regNama.textContent = mainName + groupText;
+  regId.textContent = `6 Digit NIK: ${nikSuffix}`;
+  regNama.textContent = `${passengers.length} orang cocok`;
+  regPhone.textContent = 'Klik nama untuk tampilkan KTP';
 
-  // Phone masking — show masked, click to reveal
-  const phone = data.phone || '';
-  const masked = phone.length > 4
-    ? phone.substring(0, 4) + '****' + phone.substring(phone.length - 4)
-    : phone;
-  regPhone.innerHTML = `<span class="phone-masked" title="Klik untuk tampilkan">${escapeHtml(masked)}</span>`;
-  const phoneSpan = regPhone.querySelector('.phone-masked') as HTMLSpanElement;
-  if (phoneSpan) {
-    phoneSpan.style.cursor = 'pointer';
-    phoneSpan.addEventListener('click', () => {
-      phoneSpan.innerHTML = `<a href="tel:${escapeHtml(phone)}" style="color:inherit;text-decoration:underline">${escapeHtml(phone)}</a>`;
-      phoneSpan.style.cursor = 'default';
-    }, { once: true });
-  }
-
-  // === PASSENGER CHECKLIST ===
   const passengerChecklist = document.getElementById('passengerChecklist') as HTMLDivElement;
   const passengerListItems = document.getElementById('passengerListItems') as HTMLDivElement;
-
-  // Clear previous list
   passengerListItems.innerHTML = '';
 
-  if (data.passengers && data.passengers.length > 0) {
+  if (passengers.length > 0) {
     passengerChecklist.style.display = 'block';
-    const matchedIds = new Set(data.matchedPassengerIds || []);
-
-    // Total stats
     let verifiedCount = 0;
-
-    data.passengers.forEach(p => {
+    passengers.forEach((p) => {
       if (p.verified) verifiedCount++;
 
-      const item = document.createElement('label');
+      const item = document.createElement('div');
       item.className = `passenger-item ${p.verified ? 'verified' : ''}`;
 
       const checkbox = document.createElement('input');
@@ -817,74 +885,70 @@ function showVerifyData(data: RegistrantData) {
       if (p.verified) {
         checkbox.checked = true;
         checkbox.disabled = true;
-      } else if (matchedIds.has(p.id)) {
-        checkbox.checked = true;
+      } else {
+        checkbox.checked = passengers.length === 1;
       }
+      checkbox.addEventListener('change', updateSelectAllButtonState);
 
       const details = document.createElement('div');
       details.className = 'passenger-details';
 
       const nameNode = document.createElement('div');
       nameNode.className = 'passenger-name';
-
-      const isRegBadge = p.isRegistrant ? '<span style="font-size: 10px; background: rgba(0, 195, 255, 0.1); color: var(--accent-light); padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: bold;">PENDAFTAR</span>' : '';
-      nameNode.innerHTML = `<strong>${p.nama}</strong> ${isRegBadge}`;
+      nameNode.innerHTML = `<strong>${escapeHtml(p.nama)}</strong>`;
 
       const metaNode = document.createElement('div');
       metaNode.style.fontSize = '12px';
       metaNode.style.color = 'var(--text-muted)';
       metaNode.style.marginTop = '6px';
-      metaNode.style.display = 'flex';
-      metaNode.style.alignItems = 'center';
-      metaNode.style.gap = '8px';
-
-      let metaHtml = '';
-      if (p.nik) {
-        const nikDigits = p.nik.replace(/\D/g, '');
-        const nikSuffix = nikDigits.length >= 4 ? nikDigits.slice(-4) : nikDigits;
-        metaHtml += `<span>NIK: ****${nikSuffix}</span>`;
-      }
-
-      metaNode.innerHTML = metaHtml;
-
-      if (p.ktpUrl) {
-        const ktpBtn = document.createElement('button');
-        ktpBtn.type = 'button';
-        ktpBtn.className = 'btn-ghost';
-        ktpBtn.innerHTML = '📄 KTP';
-        ktpBtn.style.padding = '2px 8px';
-        ktpBtn.style.fontSize = '11px';
-        ktpBtn.style.borderRadius = '4px';
-        ktpBtn.style.border = '1px solid var(--border-glass)';
-        ktpBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          ktpModalImage.src = p.ktpUrl!;
-          ktpModal.style.display = 'flex';
-        });
-        metaNode.appendChild(ktpBtn);
-      }
+      const nikText = p.nik ? escapeHtml(p.nik) : '-';
+      metaNode.innerHTML = `<span>NIK: ${nikText}</span>`;
 
       const stateNode = document.createElement('div');
       stateNode.className = 'passenger-state';
       if (p.verified) {
-        stateNode.innerHTML = `<span class="status-verified-text">Sudah Diverifikasi ${p.verifiedAt ? formatDateTime(p.verifiedAt) : ''}</span>`;
+        stateNode.innerHTML = `<span class="status-verified-text">Sudah diverifikasi ${p.verifiedAt ? formatDateTime(p.verifiedAt) : ''}</span>`;
       } else {
-        stateNode.innerHTML = `<span class="status-pending-text">Belum Diverifikasi</span>`;
+        stateNode.innerHTML = '<span class="status-pending-text">Belum diverifikasi</span>';
       }
 
       details.appendChild(nameNode);
-      if (metaNode.textContent) details.appendChild(metaNode);
+      details.appendChild(metaNode);
       details.appendChild(stateNode);
+
+      details.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('input')) return;
+        const existingSelected = passengerListItems.querySelector('.passenger-item.preview-selected') as HTMLDivElement | null;
+        if (existingSelected) existingSelected.classList.remove('preview-selected');
+
+        loadKtpImage(p.ktpUrl || '');
+        if (p.ktpUrl) {
+          setTimeout(() => {
+            ktpContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 60);
+        }
+        selectedByNamePassengerId = p.verified ? null : p.id;
+        if (!p.verified) {
+          item.classList.add('preview-selected');
+        }
+        updateVerifyButtonState();
+      });
 
       item.appendChild(checkbox);
       item.appendChild(details);
       passengerListItems.appendChild(item);
+
     });
 
-    const isAllVerified = verifiedCount === data.passengers.length;
+    // Tampilkan KTP otomatis hanya jika hasil tepat 1 orang
+    if (passengers.length === 1 && passengers[0].ktpUrl) {
+      loadKtpImage(passengers[0].ktpUrl);
+    } else {
+      loadKtpImage('');
+    }
 
-    if (selectAllBtn) selectAllBtn.textContent = 'Pilih Semua';
+    const isAllVerified = verifiedCount === passengers.length;
+    updateSelectAllButtonState();
 
     if (isAllVerified) {
       statusBadge.className = 'status-badge status-verified';
@@ -893,13 +957,11 @@ function showVerifyData(data: RegistrantData) {
           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
           <polyline points="22 4 12 14.01 9 11.01"/>
         </svg>
-        Semua Penumpang Diverifikasi
+        Semua sudah diverifikasi
       `;
       verifyActions.style.display = 'none';
       alreadyVerified.style.display = 'flex';
-
-      // We don't have a single verifiedTime/By for the group, so hide it or show generic
-      verifiedTime.textContent = 'Semua kuota terpakai';
+      verifiedTime.textContent = `${verifiedCount} orang`; 
     } else {
       statusBadge.className = 'status-badge status-pending';
       statusBadge.innerHTML = `
@@ -908,46 +970,47 @@ function showVerifyData(data: RegistrantData) {
           <line x1="12" y1="8" x2="12" y2="12"/>
           <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
-        Sisa Kuota: ${data.passengers.length - verifiedCount} Penumpang
+        Ditemukan ${passengers.length} orang (sisa ${passengers.length - verifiedCount} belum diverifikasi)
       `;
       verifyActions.style.display = 'block';
       alreadyVerified.style.display = 'none';
-      verifyBtn.disabled = false;
-      verifyBtn.innerHTML = `
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-          <polyline points="22 4 12 14.01 9 11.01"/>
-        </svg>
-        Verifikasi Terpilih
-      `;
+      updateVerifyButtonState();
     }
-
   } else {
-    // Legacy fallback or empty list
     passengerChecklist.style.display = 'none';
+    loadKtpImage('');
   }
-
-  loadKtpImage(data.ktpUrl);
 }
 
 function loadKtpImage(url: string) {
   if (!url) {
+    ktpContainer.style.display = 'none';
     ktpLoading.style.display = 'none';
     ktpImage.src = '';
     ktpImage.alt = 'Tidak ada gambar KTP';
     return;
   }
+
+  ktpContainer.style.display = 'block';
   ktpLoading.style.display = 'flex';
   ktpImage.style.opacity = '0';
   ktpImage.style.display = 'block';
   ktpImage.onload = () => { ktpLoading.style.display = 'none'; ktpImage.style.opacity = '1'; };
-  ktpImage.onerror = () => { ktpLoading.style.display = 'none'; ktpImage.style.display = 'none'; };
+  ktpImage.onerror = () => {
+    ktpLoading.style.display = 'none';
+    ktpImage.style.display = 'none';
+    ktpContainer.style.display = 'none';
+  };
   ktpImage.src = url;
 }
 
 function hideVerify() {
   verifySection.style.display = 'none';
-  currentRegistrant = null;
+  document.body.classList.remove('verify-active');
+  closeGroupVerifyModal();
+  selectedByNamePassengerId = null;
+  currentMatches = [];
+  currentSearchSuffix = '';
   focusLookupInput(true);
 }
 
@@ -955,12 +1018,63 @@ function hideVerify() {
 // Verify Action (with staff name)
 // ============================================
 
-async function handleVerify() {
-  if (!currentRegistrant) return;
+async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[] | null = null) {
+  if (currentMatches.length === 0) return;
 
   // Gather passenger checkboxes
   const checkboxes = document.querySelectorAll('.passenger-checkbox:checked:not([disabled])') as NodeListOf<HTMLInputElement>;
-  const selectedPassengerIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+  let selectedPassengerIds = forcedPassengerIds
+    ? [...forcedPassengerIds]
+    : Array.from(checkboxes).map((cb) => parseInt(cb.value));
+
+  if (selectedPassengerIds.length === 0 && selectedByNamePassengerId) {
+    const selectedByName = currentMatches.find((p) => p.id === selectedByNamePassengerId);
+    if (selectedByName && !selectedByName.verified) {
+      selectedPassengerIds.push(selectedByNamePassengerId);
+    }
+  }
+
+  if (!skipGroupPrompt && selectedPassengerIds.length === 1 && currentMatches.length > 1) {
+    const selectedPassenger = currentMatches.find((p) => p.id === selectedPassengerIds[0]);
+    const selectedRegistrationId = selectedPassenger?.registrationId || '';
+
+    if (selectedPassenger && selectedRegistrationId) {
+      const groupLookup = await lookupById(selectedRegistrationId);
+      const groupPassengers = groupLookup.success && groupLookup.data
+        ? groupLookup.data.passengers
+        : [];
+      const sameGroupUnverified = groupPassengers.filter((p) => !p.verified);
+
+      if (sameGroupUnverified.length > 1) {
+        const otherPassengers = sameGroupUnverified.filter((p) => p.id !== selectedPassenger.id);
+        openGroupVerifyModal({
+          message: `Masih ada ${sameGroupUnverified.length} penumpang dalam pendaftar yang sama. Check-in semua sekarang?`,
+          confirmText: 'Ya, Check-in Semua',
+          cancelText: 'Tetap Satu Orang',
+          passengerList: otherPassengers,
+          onConfirm: () => {
+            selectedByNamePassengerId = null;
+            updateSelectAllButtonState();
+            void handleVerify(true, sameGroupUnverified.map((p) => p.id));
+          },
+          onCancel: () => {
+            void handleVerify(true, [selectedPassenger.id]);
+          },
+        });
+        return;
+      }
+    }
+
+    openGroupVerifyModal({
+      message: `Ditemukan ${currentMatches.length} data. Lanjut verifikasi 1 orang ini saja?`,
+      confirmText: 'Ya, Verifikasi 1 Orang',
+      cancelText: 'Batal',
+      onConfirm: () => {
+        void handleVerify(true, selectedPassenger ? [selectedPassenger.id] : selectedPassengerIds);
+      },
+    });
+    return;
+  }
 
   if (selectedPassengerIds.length === 0) {
     showToast('Pilih setidaknya 1 penumpang untuk diverifikasi');
@@ -968,20 +1082,19 @@ async function handleVerify() {
   }
 
   verifyBtn.disabled = true;
+  verifyAllBtn.disabled = true;
   verifyBtn.innerHTML = `
     <div class="loading-spinner small" style="width:18px;height:18px;border-width:2px;"></div>
     Memverifikasi...
   `;
 
   try {
-    // Pass passenger IDs to the backend
-    const result = await verifyRegistrant(currentRegistrant.id, selectedPassengerIds, currentStaffName);
+    const result = await verifyPassengers(selectedPassengerIds, currentStaffName);
 
     if (result.success) {
-      // Update local state without fetching again
       const now = new Date().toISOString();
-      selectedPassengerIds.forEach(id => {
-        const p = currentRegistrant!.passengers.find(p => p.id === id);
+      selectedPassengerIds.forEach((id) => {
+        const p = currentMatches.find((item) => item.id === id);
         if (p) {
           p.verified = true;
           p.verifiedAt = now;
@@ -989,11 +1102,10 @@ async function handleVerify() {
         }
       });
 
-      showVerifyData(currentRegistrant);
+      showVerifyData(currentMatches, currentSearchSuffix);
 
-      // Check if group is fully verified to log history
-      const allVerified = currentRegistrant.passengers.every(p => p.verified);
-      addToHistory(currentRegistrant.id, allVerified ? 'verified' : 'pending');
+      const allVerified = currentMatches.every((p) => p.verified);
+      addToHistory(currentSearchSuffix || manualIdInput.value.trim(), allVerified ? 'verified' : 'pending');
       renderHistory();
 
       playVerifyBeep();
@@ -1017,14 +1129,82 @@ async function handleVerify() {
 }
 
 function resetVerifyBtn() {
-  verifyBtn.disabled = false;
-  verifyBtn.innerHTML = `
-    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-      <polyline points="22 4 12 14.01 9 11.01"/>
-    </svg>
-    Verifikasi Sekarang
-  `;
+  updateVerifyButtonState();
+}
+
+function openGroupVerifyModal(options: {
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  passengerList?: PassengerData[];
+  onConfirm: () => void;
+  onCancel?: () => void;
+}) {
+  groupVerifyMessage.textContent = options.message;
+  if (options.passengerList && options.passengerList.length > 0) {
+    groupVerifyListWrap.style.display = 'block';
+    groupVerifyList.innerHTML = options.passengerList
+      .map((p) => {
+        const nik = p.nik ? escapeHtml(p.nik) : '-';
+        return `<div class="group-verify-list-item"><span class="group-verify-name">${escapeHtml(p.nama)}</span><span class="group-verify-nik">NIK: ${nik}</span></div>`;
+      })
+      .join('');
+  } else {
+    groupVerifyListWrap.style.display = 'none';
+    groupVerifyList.innerHTML = '';
+  }
+  groupVerifyConfirm.textContent = options.confirmText;
+  groupVerifyCancel.textContent = options.cancelText;
+  groupVerifyOnConfirm = options.onConfirm;
+  groupVerifyOnCancel = options.onCancel || null;
+  groupVerifyModal.style.display = 'flex';
+  setTimeout(() => groupVerifyConfirm.focus(), 80);
+}
+
+function closeGroupVerifyModal() {
+  groupVerifyModal.style.display = 'none';
+  groupVerifyOnConfirm = null;
+  groupVerifyOnCancel = null;
+  groupVerifyListWrap.style.display = 'none';
+  groupVerifyList.innerHTML = '';
+  groupVerifyConfirm.textContent = 'Ya, Verifikasi Semua';
+  groupVerifyCancel.textContent = 'Batal';
+}
+
+function runGroupVerifyConfirm() {
+  const handler = groupVerifyOnConfirm;
+  closeGroupVerifyModal();
+  if (handler) handler();
+}
+
+function runGroupVerifyCancel() {
+  const handler = groupVerifyOnCancel;
+  closeGroupVerifyModal();
+  if (handler) handler();
+}
+
+function handleVerifyAllUnverified() {
+  const checkboxes = document.querySelectorAll('.passenger-checkbox:not([disabled])') as NodeListOf<HTMLInputElement>;
+  const total = checkboxes.length;
+
+  if (total === 0) {
+    showToast('Semua penumpang sudah diverifikasi');
+    return;
+  }
+
+  openGroupVerifyModal({
+    message: `Verifikasi semua ${total} penumpang yang belum verified?`,
+    confirmText: 'Ya, Verifikasi Semua',
+    cancelText: 'Batal',
+    onConfirm: () => {
+      checkboxes.forEach((cb) => {
+        cb.checked = true;
+      });
+      selectedByNamePassengerId = null;
+      updateSelectAllButtonState();
+      handleVerify(true);
+    },
+  });
 }
 
 // ============================================
@@ -1051,7 +1231,7 @@ function closeKtpFullscreen() {
 manualForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const id = manualIdInput.value.trim();
-  if (!id) { showToast('Masukkan 4 digit terakhir NIK'); focusLookupInput(); return; }
+  if (!id) { showToast('Masukkan 6 digit terakhir NIK'); focusLookupInput(); return; }
   playScanBeep();
   handleScanResult(id);
   manualIdInput.value = '';
@@ -1066,16 +1246,23 @@ manualIdInput.addEventListener('input', () => {
 closeVerify.addEventListener('click', hideVerify);
 retryScanBtn.addEventListener('click', () => {
   hideVerify();
-  showToast('Masukkan 4 digit NIK berikutnya');
+  showToast('Masukkan 6 digit NIK berikutnya');
 });
-verifyBtn.addEventListener('click', handleVerify);
+verifyBtn.addEventListener('click', () => { void handleVerify(); });
+verifyAllBtn.addEventListener('click', handleVerifyAllUnverified);
+groupVerifyConfirm.addEventListener('click', runGroupVerifyConfirm);
+groupVerifyCancel.addEventListener('click', runGroupVerifyCancel);
+closeGroupVerify.addEventListener('click', runGroupVerifyCancel);
+groupVerifyModal.addEventListener('click', (e) => {
+  if (e.target === groupVerifyModal) runGroupVerifyCancel();
+});
 if (selectAllBtn) {
   selectAllBtn.addEventListener('click', () => {
     const checkboxes = document.querySelectorAll('.passenger-checkbox:not([disabled])') as NodeListOf<HTMLInputElement>;
     if (checkboxes.length === 0) return;
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     checkboxes.forEach(cb => cb.checked = !allChecked);
-    selectAllBtn.textContent = allChecked ? 'Pilih Semua' : 'Batal Pilih';
+    updateSelectAllButtonState();
   });
 }
 
@@ -1143,9 +1330,24 @@ window.addEventListener('offline', () => { updateNetworkStatus(); showToast('⚠
 
 // Keyboard
 document.addEventListener('keydown', (e) => {
+  if (isTypingTarget(e.target)) return;
+
+  if (groupVerifyModal.style.display === 'flex' && e.key === 'Enter') {
+    e.preventDefault();
+    runGroupVerifyConfirm();
+    return;
+  }
+
+  if (groupVerifyModal.style.display === 'flex' && e.key === 'Escape') {
+    e.preventDefault();
+    runGroupVerifyCancel();
+    return;
+  }
+
   if (e.key === 'Escape') {
     hideVerify();
     closeKtpFullscreen();
+    closeGroupVerifyModal();
     closeAdminPinModal();
     closeSettingsModal();
     return;
@@ -1176,6 +1378,7 @@ document.addEventListener('keydown', (e) => {
       if (idx >= 0 && idx < checkboxes.length) {
         e.preventDefault();
         checkboxes[idx].checked = !checkboxes[idx].checked;
+        updateSelectAllButtonState();
       }
     }
   }
@@ -1185,7 +1388,7 @@ document.addEventListener('keydown', (e) => {
 // PWA Registration
 // ============================================
 
-if ('serviceWorker' in navigator) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => { });
   });
@@ -1199,6 +1402,7 @@ initTheme();
 updateNetworkStatus();
 renderHistory();
 initLockScreen();
+loadKtpImage('');
 
 if (!isPinEnabled()) {
   setTimeout(() => focusLookupInput(), 80);
@@ -1208,6 +1412,14 @@ if (!isPinEnabled()) {
 autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
 autoScanCheck.addEventListener('change', () => {
   try { localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString()); } catch { /* */ }
+});
+
+// Persist compact mode preference
+compactModeCheck.checked = localStorage.getItem(COMPACT_MODE_KEY) === 'true';
+applyCompactMode(compactModeCheck.checked);
+compactModeCheck.addEventListener('change', () => {
+  applyCompactMode(compactModeCheck.checked);
+  try { localStorage.setItem(COMPACT_MODE_KEY, compactModeCheck.checked.toString()); } catch { /* */ }
 });
 
 // Refresh stale timestamps when app becomes visible again
@@ -1224,5 +1436,5 @@ if (scannerSection) {
 }
 
 if (!isConfigured()) {
-  console.log('%c⚠️ Mode Demo — buka Settings untuk set URL Google Sheet', 'color: #feca57; font-weight: bold');
+  console.log('%c⚠️ Mode Demo — backend data belum terhubung', 'color: #feca57; font-weight: bold');
 }

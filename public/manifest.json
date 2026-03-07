@@ -2,7 +2,7 @@
     "id": "/",
     "name": "MUDIK — QR Scanner Verifikasi",
     "short_name": "MUDIK",
-    "description": "QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat, terintegrasi Google Sheets, dan bekerja offline.",
+    "description": "QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat dengan sinkronisasi CSV lokal dan dukungan offline.",
     "start_url": "./",
     "scope": "./",
     "display": "standalone",

@@ -1,45 +1,38 @@
-# Panduan Migrasi Data (Google Sheets -> PostgreSQL)
+# Panduan Sinkronisasi Data Final (CSV Lokal -> PostgreSQL)
 
-Berikut adalah langkah-langkah untuk memindahkan data peserta dan foto KTP dari Google Sheets ke sistem baru.
+Dokumen ini menjelaskan proses import final satu kali dari file CSV lokal ke database.
 
-## 1. Persiapan Data (Google Sheets)
-1.  Buka Google Sheet data peserta Anda.
-2.  Pastikan header kolom (baris pertama) bernama:
-    *   `id`
-    *   `nama`
-    *   `phone`
-    *   `ktpUrl`
-    *   `verified`
-    *   `verifiedAt`
-    *   `verifiedBy`
-3.  Klik **File** > **Download** > **Comma Separated Values (.csv)**.
-4.  Simpan file tersebut sebagai `data.csv` dan letakkan di dalam folder `migration/` di project ini.
+## 1. Persiapan File
+1. Simpan file final sebagai `Data Pemudik Final.csv` di root project.
+2. Pastikan header kolom mengikuti format data mudik saat ini (contoh: `Nama Pegawai`, `Nomor WA`, `QR Code`, `Nama Lengkap Penumpang 1`, `NIK`).
 
 ## 2. Persiapan Koneksi Database
-Script migrasi akan mencoba menghubungi database.
-*   Jika database berjalan di Docker, pastikan port database terekspos ke host (laptop Anda).
-*   Edit `.env` atau sesuaikan config di `migration/migrate.js` (default port: 5432).
-    *   *Note: Di docker-compose.yml kita belum mengekspos port 5432 ke host secara eksplisit untuk `mudik-db`. Anda mungkin perlu menambah `ports: - "5433:5432"` di `docker-compose.yml` untuk menjalankan script ini dari luar container.*
+1. Pastikan Postgres berjalan.
+2. Pastikan `.env` berisi kredensial DB yang benar (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`).
 
-## 3. Menjalankan Migrasi
-Buka terminal di folder project dan jalankan:
+## 3. Jalankan Import Final (One-Shot)
 
 ```bash
-# Install dependencies migrasi (jika belum)
-npm install axios csv-parser pg
-
-# Jalankan script
-node migration/migrate.js
+npm ci
+npm run sync:final
 ```
 
-## Apa yang dilakukan script ini?
-1.  Membaca `migration/data.csv`.
-2.  Untuk setiap baris:
-    *   Mendownload foto dari `ktpUrl` (jika ada).
-    *   Menyimpan foto ke folder `uploads/` dengan nama file `ID_PESERTA.jpg`.
-    *   Menyimpan data peserta ke database PostgreSQL.
-    *   Mengupdate kolom `ktp_url` di database mearah ke file lokal (`/uploads/...`).
+Secara default script membaca file `Data Pemudik Final.csv` di root project.
+
+Jika perlu path custom:
+
+```bash
+CSV_FILE_PATH="C:/path/ke/file.csv" node migration/migrate_mudik.js
+```
+
+## 4. Apa yang dilakukan script ini?
+1. Membaca CSV lokal dan validasi header penting.
+2. Menormalisasi data (nama, WA, NIK).
+3. Upsert data ke tabel `registrations` dan `passengers`.
+4. Menandai data aktif/nonaktif berdasarkan snapshot CSV terakhir.
+5. Menyimpan hasil run ke tabel `sync_runs`.
 
 ## Troubleshooting
-*   **Error Connection Refused**: Cek apakah Postgres berjalan dan port-nya benar.
-*   **Gambar Gagal Download**: Pastikan link Google Drive bersifat "Anyone with the link can view". Script mencoba mengonversi link view menjadi link download otomatis.
+- **File CSV tidak ditemukan**: pastikan nama/path file benar.
+- **Error connection refused**: cek status Postgres dan nilai `DB_*` di `.env`.
+- **Gambar gagal download**: pastikan URL gambar publik; jika tidak, URL asli tetap disimpan sebagai fallback.

@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "deploy": "npm run build && echo 'Build ready in dist/'"
+    "deploy": "npm run build && echo 'Build ready in dist/'",
+    "dev:up": "docker compose up -d app postgres",
+    "sync:final": "node migration/migrate_mudik.js"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",

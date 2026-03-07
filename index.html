@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#1F1520" />
   <meta name="description"
-    content="MUDIK — QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat, terintegrasi Google Sheets." />
+    content="MUDIK — QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat dengan sinkronisasi CSV lokal." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="MUDIK" />
@@ -26,7 +26,7 @@
   <link rel="manifest" href="/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <title>MUDIK — QR Scanner Verifikasi</title>
 </head>
 
@@ -54,6 +54,10 @@
           <h1>MUDIK</h1>
         </div>
         <div class="header-right">
+          <!-- Compact Mode Badge -->
+          <div class="compact-mode-badge" id="compactModeBadge" style="display:none;" title="Mode tampilan ringkas aktif">
+            Compact ON
+          </div>
           <!-- Staff Badge -->
           <div class="staff-badge" id="staffBadge" style="display:none;" title="Staf aktif">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -121,7 +125,7 @@
               <line x1="4" y1="12" x2="20" y2="12" />
               <line x1="4" y1="18" x2="14" y2="18" />
             </svg>
-            Verifikasi 4 Digit NIK
+            Verifikasi 6 Digit NIK
           </h2>
         </div>
 
@@ -131,6 +135,12 @@
           <span class="toggle-label">Mode Antrian (Auto-Verify & Lanjut Input Berikutnya)</span>
         </label>
 
+        <label for="compactModeCheck" class="auto-scan-toggle">
+          <input type="checkbox" id="compactModeCheck" />
+          <div class="toggle-slider"></div>
+          <span class="toggle-label">Operator Compact Mode (tampilan lebih padat)</span>
+        </label>
+
         <div class="manual-input">
           <div class="manual-input-header">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -138,17 +148,17 @@
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            <span>Ketik 4 Digit Terakhir NIK</span>
+            <span>Ketik 6 Digit Terakhir NIK</span>
           </div>
           <form id="manualForm" class="manual-form">
             <input type="text" id="manualIdInput" class="manual-input-field"
-              placeholder="Contoh: 5566" autocomplete="off" inputmode="numeric" maxlength="4" />
+              placeholder="Contoh: 123456" autocomplete="off" inputmode="numeric" maxlength="6" />
             <button type="submit" class="btn btn-primary manual-submit-btn">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              Cari NIK
+              <span class="manual-submit-text">Cari NIK</span>
             </button>
           </form>
           <p class="placeholder-hint" style="margin-top: 10px;">Shortcut: <strong>F2</strong> fokus input, <strong>1-9</strong> pilih penumpang, <strong>A</strong> pilih semua, <strong>Enter</strong> verifikasi</p>
@@ -271,14 +281,21 @@
               style="display: flex; justify-content: space-between; align-items: center;">
               <span>Pilih Penumpang yang Hadir:</span>
               <button type="button" id="selectAllBtn" class="btn-ghost"
+                title="Pilih semua penumpang yang belum verified"
+                aria-label="Pilih semua penumpang yang belum verified"
                 style="padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-glass);">Pilih
-                Semua</button>
+                Semua Belum Verified</button>
             </div>
             <div id="passengerListItems" class="passenger-list-items"></div>
           </div>
 
           <!-- Verify Action -->
           <div class="verify-actions" id="verifyActions">
+            <button id="verifyAllBtn" type="button" class="btn btn-ghost verify-all-btn"
+              title="Verifikasi semua penumpang yang belum verified"
+              aria-label="Verifikasi semua penumpang yang belum verified">
+              Verifikasi Semua Belum Verified
+            </button>
             <button id="verifyBtn" class="btn btn-verify">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
@@ -309,6 +326,38 @@
           </svg>
         </button>
         <img id="ktpModalImage" class="modal-image" alt="KTP Full View" />
+      </div>
+
+      <!-- Group Verify Confirm Modal -->
+      <div class="settings-modal" id="groupVerifyModal" style="display:none;">
+        <div class="settings-card" style="max-width:420px;">
+          <div class="settings-header">
+            <h2>
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              Konfirmasi Rombongan
+            </h2>
+            <button id="closeGroupVerify" class="icon-btn" title="Batal" aria-label="Batal verifikasi rombongan">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="settings-body">
+            <p class="settings-hint" id="groupVerifyMessage">Verifikasi semua penumpang yang belum verified?</p>
+            <div class="group-verify-list-wrap" id="groupVerifyListWrap" style="display:none;">
+              <p class="group-verify-list-title">Penumpang lain dalam pendaftar ini:</p>
+              <div class="group-verify-list" id="groupVerifyList"></div>
+            </div>
+          </div>
+          <div class="settings-footer group-verify-actions">
+            <button id="groupVerifyCancel" class="btn btn-ghost" type="button">Batal</button>
+            <button id="groupVerifyConfirm" class="btn btn-primary" type="button">Ya, Verifikasi Semua</button>
+          </div>
+        </div>
       </div>
 
       <!-- History Section -->
@@ -346,7 +395,7 @@
               <line x1="20" y1="40" x2="32" y2="40" />
             </svg>
             <p>Belum ada riwayat pencarian</p>
-            <p class="empty-hint">Input 4 digit NIK akan muncul di sini</p>
+            <p class="empty-hint">Input 6 digit NIK akan muncul di sini</p>
           </div>
         </div>
       </section>
@@ -437,7 +486,7 @@
           </button>
         </div>
         <div class="settings-body">
-          <!-- Google Sheets URL -->
+          <!-- Sumber data dikelola di backend -->
           <!-- Settings Group Removed -->
           <!-- PIN Login (untuk verifikator) -->
           <div class="settings-group">

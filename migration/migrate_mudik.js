@@ -11,46 +11,228 @@ dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Database Configuration
 const pool = new pg.Pool({
     user: process.env.DB_USER || 'postgres',
     host: process.env.DB_HOST || 'localhost',
     database: process.env.DB_NAME || 'kiar',
     password: process.env.DB_PASSWORD || 'kiar_secret',
-    port: parseInt(process.env.DB_PORT || '5435'), // Notice we use 5435 as mapped in docker-compose for external access
+    port: parseInt(process.env.DB_PORT || '5435', 10),
 });
 
 const UPLOADS_DIR = path.join(__dirname, '../uploads');
 
-// List of CSV URLs (from different tabs of the spreadsheet)
-const CSV_URLS = [
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=1602524796&single=true&output=csv', // Surabaya via Pantura
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=1141680108&single=true&output=csv', // Solo via Wonosobo
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=39049124&single=true&output=csv', // Pacitan via Wonogiri
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=1406001982&single=true&output=csv', // Pacitan via Selatan
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=1252590251&single=true&output=csv', // Malang via Yogyakarta
-    'https://docs.google.com/spreadsheets/d/e/2PACX-1vTnEOmjbL_ytLThY-gGE3iV59KGlyqxmZmsCQw9ch9Kae7WCE2Vlr5uiA6omvU5GliEhyw_Fy57Irsj/pub?gid=561266202&single=true&output=csv', // Yogyakarta via Cilacap
+const DEFAULT_CSV_FILE_PATH = path.join(__dirname, '../Data Pemudik Final.csv');
+
+const REQUIRED_HEADERS = [
+    'Nama Pegawai',
+    'Nomor WA',
+    'QR Code',
+    'Nama Lengkap Penumpang 1',
+    'NIK',
+    'Kartu Keluarga',
+    'Kartu Tanda Pengenal Pegawai',
 ];
 
-// Ensure uploads folder exists
+const UPPERCASE_NAME_TOKENS = new Set(['TNI', 'POLRI', 'PT', 'CV', 'H', 'HJ']);
+
+function parseCsvUrls(value) {
+    if (!value) return [];
+    return value
+        .split(/[\n,]/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+}
+
+function parseCsvFilePaths(value) {
+    if (!value) return [];
+    return value
+        .split(/[\n,]/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+}
+
+const CSV_SOURCES = (() => {
+    const listFromFilePaths = parseCsvFilePaths(process.env.CSV_FILE_PATHS);
+    if (listFromFilePaths.length > 0) {
+        return listFromFilePaths.map((filePath) => ({ type: 'file', value: filePath }));
+    }
+
+    const singleFromFilePath = (process.env.CSV_FILE_PATH || '').trim();
+    if (singleFromFilePath) {
+        return [{ type: 'file', value: singleFromFilePath }];
+    }
+
+    if (fs.existsSync(DEFAULT_CSV_FILE_PATH)) {
+        return [{ type: 'file', value: DEFAULT_CSV_FILE_PATH }];
+    }
+
+    const listFromCsvUrls = parseCsvUrls(process.env.CSV_URLS);
+    if (listFromCsvUrls.length > 0) {
+        return listFromCsvUrls.map((url) => ({ type: 'url', value: url }));
+    }
+
+    const singleFromCsvUrl = (process.env.CSV_URL || '').trim();
+    if (singleFromCsvUrl) {
+        return [{ type: 'url', value: singleFromCsvUrl }];
+    }
+
+    return [{ type: 'file', value: DEFAULT_CSV_FILE_PATH }];
+})();
+
+const CSV_SKIP_LINES = Number.parseInt(process.env.CSV_SKIP_LINES || '0', 10);
+
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Function to download CSV from URL
+function isRomanNumeral(text) {
+    return /^(?=[ivxlcdm]+$)m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$/i.test(text);
+}
+
+function capitalizeSimple(text) {
+    const lower = text.toLowerCase();
+    if (!lower) return lower;
+    return lower[0].toUpperCase() + lower.slice(1);
+}
+
+function normalizeNameToken(token) {
+    const cleaned = token.trim();
+    if (!cleaned) return '';
+
+    const alphaNumOnly = cleaned.replace(/[^a-zA-Z0-9]/g, '');
+    const upper = alphaNumOnly.toUpperCase();
+    if (UPPERCASE_NAME_TOKENS.has(upper) || isRomanNumeral(alphaNumOnly)) {
+        return upper;
+    }
+
+    return cleaned
+        .split('-')
+        .map((hyphenPart) => hyphenPart
+            .split("'")
+            .map((apostrophePart) => capitalizeSimple(apostrophePart))
+            .join("'"))
+        .join('-');
+}
+
+function normalizeName(rawName) {
+    if (!rawName) return '';
+    const collapsed = String(rawName).trim().replace(/\s+/g, ' ');
+    if (!collapsed) return '';
+
+    return collapsed
+        .split(' ')
+        .map((token) => normalizeNameToken(token))
+        .filter(Boolean)
+        .join(' ');
+}
+
+function normalizeHeaderName(header) {
+    if (!header) return header;
+    return String(header).replace(/^\uFEFF/, '').trim();
+}
+
+function scientificToPlain(value) {
+    const raw = String(value).trim();
+    const match = raw.match(/^([+-]?\d+(?:\.\d+)?)[eE]([+-]?\d+)$/);
+    if (!match) return raw;
+
+    const mantissa = match[1];
+    const exponent = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(exponent)) return raw;
+
+    const negative = mantissa.startsWith('-');
+    const unsignedMantissa = mantissa.replace(/^[+-]/, '');
+    const [whole, fraction = ''] = unsignedMantissa.split('.');
+    const digits = `${whole}${fraction}`.replace(/^0+(?=\d)/, '') || '0';
+    const decimalPos = whole.length;
+    const newDecimalPos = decimalPos + exponent;
+
+    let plain;
+    if (newDecimalPos <= 0) {
+        plain = `0.${'0'.repeat(Math.abs(newDecimalPos))}${digits}`;
+    } else if (newDecimalPos >= digits.length) {
+        plain = `${digits}${'0'.repeat(newDecimalPos - digits.length)}`;
+    } else {
+        plain = `${digits.slice(0, newDecimalPos)}.${digits.slice(newDecimalPos)}`;
+    }
+
+    return negative ? `-${plain}` : plain;
+}
+
+function extractDigits(rawValue) {
+    if (rawValue == null) return '';
+    const text = String(rawValue).trim();
+    if (!text) return '';
+    const normalized = /[eE][+-]?\d+/.test(text) ? scientificToPlain(text) : text;
+    return normalized.replace(/\D/g, '');
+}
+
+function normalizePhoneTo62(rawPhone) {
+    if (!rawPhone) return null;
+    const digits = extractDigits(rawPhone);
+    if (!digits) return null;
+
+    if (digits.startsWith('62')) return digits;
+    if (digits.startsWith('0')) return `62${digits.slice(1)}`;
+    if (digits.startsWith('8')) return `62${digits}`;
+    return digits;
+}
+
+function normalizeNik(rawNik) {
+    if (!rawNik) return null;
+    const nik = extractDigits(rawNik);
+    return nik || null;
+}
+
+function validateHeaders(headers, sourceLabel) {
+    const normalizedHeaders = headers.map((header) => normalizeHeaderName(header));
+    const missing = REQUIRED_HEADERS.filter((header) => !normalizedHeaders.includes(header));
+    if (missing.length > 0) {
+        throw new Error(`Header CSV tidak valid untuk ${sourceLabel}. Kolom wajib hilang: ${missing.join(', ')}`);
+    }
+}
+
+async function readCsvRowsFromPath(filePath, sourceLabel, sheetIndex) {
+    const parsedRows = [];
+    await new Promise((resolve, reject) => {
+        fs.createReadStream(filePath)
+            .pipe(csv({
+                skipLines: Number.isNaN(CSV_SKIP_LINES) ? 0 : CSV_SKIP_LINES,
+                mapHeaders: ({ header }) => normalizeHeaderName(header),
+            }))
+            .on('headers', (headers) => {
+                try {
+                    validateHeaders(headers, sourceLabel);
+                } catch (error) {
+                    reject(error);
+                }
+            })
+            .on('data', (data) => {
+                if (data['Nama Pegawai'] || data['Nomor WA'] || data['QR Code']) {
+                    data._sheetIndex = sheetIndex;
+                    parsedRows.push(data);
+                }
+            })
+            .on('end', resolve)
+            .on('error', reject);
+    });
+
+    return parsedRows;
+}
+
 async function downloadCSV(url, index) {
     try {
         const response = await axios({
-            url: url,
+            url,
             method: 'GET',
-            responseType: 'stream'
+            responseType: 'stream',
         });
 
         const filePath = path.join(__dirname, `temp_data_${index}.csv`);
         const writer = fs.createWriteStream(filePath);
         response.data.pipe(writer);
 
-        return new Promise((resolve, reject) => {
+        return await new Promise((resolve, reject) => {
             writer.on('finish', () => resolve(filePath));
             writer.on('error', reject);
         });
@@ -60,7 +242,6 @@ async function downloadCSV(url, index) {
     }
 }
 
-// Function to handle Google Drive downloads
 async function downloadImage(url, filename) {
     if (!url || !url.startsWith('http')) return null;
 
@@ -77,119 +258,210 @@ async function downloadImage(url, filename) {
         const response = await axios({
             url: downloadUrl,
             method: 'GET',
-            responseType: 'stream'
+            responseType: 'stream',
         });
 
         const filePath = path.join(UPLOADS_DIR, filename);
         const writer = fs.createWriteStream(filePath);
-
         response.data.pipe(writer);
 
-        return new Promise((resolve, reject) => {
+        return await new Promise((resolve, reject) => {
             writer.on('finish', () => resolve(`/uploads/${filename}`));
             writer.on('error', reject);
         });
     } catch (error) {
         console.error(`  ❌ Failed to download map/KTP for ${filename} (might be private/removed): ${error.message}`);
-        // Return original URL as fallback if download fails
         return url;
     }
 }
 
-async function migrate() {
-    console.log('🚀 Memulai migrasi Mudik Option A...');
+async function ensureSchema() {
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS id_card_url TEXT');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS phone_raw VARCHAR(100)');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP');
 
-    // Check DB connection first
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS source_slot SMALLINT');
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS nama_raw VARCHAR(255)');
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS nama_normalized VARCHAR(255)');
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE');
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP');
+
+    await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS passengers_registration_slot_uidx
+        ON passengers (registration_id, source_slot)
+        WHERE source_slot IS NOT NULL
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS passenger_verifications (
+            id BIGSERIAL PRIMARY KEY,
+            passenger_id INTEGER NOT NULL REFERENCES passengers(id) ON DELETE CASCADE,
+            verified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            verified_by VARCHAR(100) NOT NULL DEFAULT 'Unknown',
+            source VARCHAR(20) NOT NULL DEFAULT 'scanner',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS passenger_verifications_passenger_idx
+        ON passenger_verifications (passenger_id, verified_at DESC, id DESC)
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS sync_runs (
+            id BIGSERIAL PRIMARY KEY,
+            started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at TIMESTAMP,
+            status VARCHAR(20) NOT NULL,
+            rows_read INTEGER NOT NULL DEFAULT 0,
+            rows_upserted INTEGER NOT NULL DEFAULT 0,
+            rows_skipped INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await pool.query(`
+        INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source)
+        SELECT p.id,
+               COALESCE(p.verified_at, p.created_at, CURRENT_TIMESTAMP),
+               COALESCE(NULLIF(p.verified_by, ''), 'Unknown'),
+               'import'
+        FROM passengers p
+        WHERE p.verified = TRUE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM passenger_verifications pv
+              WHERE pv.passenger_id = p.id
+          )
+    `);
+}
+
+async function finalizeSyncRun(syncRunId, status, rowsRead, rowsUpserted, rowsSkipped, errorMessage = null) {
+    if (!syncRunId) return;
+
+    await pool.query(
+        `UPDATE sync_runs
+         SET status = $1,
+             finished_at = CURRENT_TIMESTAMP,
+             rows_read = $2,
+             rows_upserted = $3,
+             rows_skipped = $4,
+             error = $5
+         WHERE id = $6`,
+        [status, rowsRead, rowsUpserted, rowsSkipped, errorMessage, syncRunId],
+    );
+}
+
+async function migrate() {
+    console.log('🚀 Memulai sinkronisasi Mudik final (one-shot)...');
+
+    let syncRunId = null;
+    let rowsRead = 0;
+    let rowsUpserted = 0;
+    let rowsSkipped = 0;
+    let rowsWithWarnings = 0;
+
     try {
         const testRes = await pool.query('SELECT NOW()');
         console.log('Database connected:', testRes.rows[0].now);
+
+        await ensureSchema();
+
+        const runRes = await pool.query(
+            'INSERT INTO sync_runs (status, rows_read, rows_upserted, rows_skipped) VALUES ($1, $2, $3, $4) RETURNING id',
+            ['running', 0, 0, 0],
+        );
+        syncRunId = runRes.rows[0].id;
     } catch (err) {
-        console.error('Database connection failed. Check your .env or port mapping:', err.message);
+        console.error('Database connection/setup failed. Check your .env or port mapping:', err.message);
         process.exit(1);
     }
 
     const allResults = [];
 
-    // Download and parse all CSVs
-    for (let i = 0; i < CSV_URLS.length; i++) {
-        const url = CSV_URLS[i];
-        console.log(`\n📥 Mendownload data dari Sheet ${i + 1}...`);
-        const csvPath = await downloadCSV(url, i);
+    for (let i = 0; i < CSV_SOURCES.length; i++) {
+        const source = CSV_SOURCES[i];
+        const sourceLabel = source.type === 'url'
+            ? `URL #${i + 1}`
+            : `File #${i + 1}`;
 
-        if (csvPath) {
-            await new Promise((resolve, reject) => {
-                fs.createReadStream(csvPath)
-                    .pipe(csv({ skipLines: 2 }))
-                    .on('data', (data) => {
-                        if (data['Nama Pegawai'] || data['Nomor WA'] || data['QR Code']) {
-                            // Add source info purely for logging if needed
-                            data._sheetIndex = i + 1;
-                            allResults.push(data);
-                        }
-                    })
-                    .on('end', () => {
-                        // Clean up temp file
-                        try { fs.unlinkSync(csvPath); } catch (e) { }
-                        resolve();
-                    })
-                    .on('error', reject);
-            });
+        if (source.type === 'url') {
+            console.log(`\n📥 Mendownload data dari ${sourceLabel}: ${source.value}`);
+            const csvPath = await downloadCSV(source.value, i);
+            if (!csvPath) continue;
+
+            try {
+                const rows = await readCsvRowsFromPath(csvPath, sourceLabel, i + 1);
+                allResults.push(...rows);
+            } finally {
+                try {
+                    fs.unlinkSync(csvPath);
+                } catch {
+                    // noop
+                }
+            }
+            continue;
         }
+
+        const absolutePath = path.isAbsolute(source.value)
+            ? source.value
+            : path.resolve(process.cwd(), source.value);
+
+        if (!fs.existsSync(absolutePath)) {
+            console.error(`❌ File CSV tidak ditemukan: ${absolutePath}`);
+            continue;
+        }
+
+        console.log(`\n📄 Membaca data dari file: ${absolutePath}`);
+        const rows = await readCsvRowsFromPath(absolutePath, sourceLabel, i + 1);
+        allResults.push(...rows);
     }
 
-    console.log(`\n📊 Ditemukan total ${allResults.length} baris data valid dari semua sumber.`);
+    rowsRead = allResults.length;
+    console.log(`\n📊 Ditemukan total ${rowsRead} baris data valid dari semua sumber.`);
 
     const client = await pool.connect();
+    const processedRegistrationIds = new Set();
 
     try {
-        // 1. Backup Verified Statuses
-        console.log('\n💾 Membackup status kehadiran peserta...');
-        const backupRes = await client.query(`
-            SELECT p.nama, r.phone, p.verified_at, p.verified_by 
-            FROM passengers p
-            JOIN registrations r ON p.registration_id = r.id
-            WHERE p.verified = TRUE
-        `);
-        const verifiedBackup = backupRes.rows;
-        console.log(`✅ ${verifiedBackup.length} data kehadiran tersimpan di memori.`);
+        await client.query('BEGIN');
 
-        // 2. Clear Database (Reset state)
-        console.log('🧹 Membersihkan database lama...');
-        await client.query('TRUNCATE TABLE passengers, registrations CASCADE');
-
-        // 3. Insert Fresh Data
-        console.log('🚀 Memulai sinkronisasi data baru...');
         for (const row of allResults) {
-            let qrCode = row['QR Code'] ? row['QR Code'].trim() : null;
-            if (!qrCode) {
-                // Generate a custom ID for rows without a QR Code based on phone/name to prevent duplicates
-                const phoneForId = row['Nomor WA'] ? row['Nomor WA'].trim().replace(/\D/g, '') : '';
-                const nameForId = row['Nama Pegawai'] ? row['Nama Pegawai'].trim().replace(/\s+/g, '').substring(0, 5).toUpperCase() : '';
+            let rowHasWarning = false;
 
-                if (!phoneForId && !nameForId) continue; // Skip completely empty rows
-                qrCode = `YKSN_MANUAL_${nameForId}_${phoneForId}`.substring(0, 50); // Keep ID length reasonable
-                console.log(`⚠️  Membuat ID Manual untuk baris tanpa QR: ${qrCode}`);
+            let qrCode = row['QR Code'] ? row['QR Code'].trim() : null;
+
+            const phoneRaw = row['Nomor WA'] ? row['Nomor WA'].trim() : null;
+            const normalizedPhone = normalizePhoneTo62(phoneRaw);
+            if (phoneRaw && !normalizedPhone) {
+                console.warn(`⚠️ Nomor WA tidak valid pada ${qrCode || 'baris tanpa QR'}: ${phoneRaw}`);
+                rowHasWarning = true;
             }
 
-            let phone = row['Nomor WA'] ? row['Nomor WA'].trim() : null;
-            if (phone) {
-                // Fix leading zeros
-                if (phone.startsWith('8')) {
-                    phone = '0' + phone;
-                } else if (phone.startsWith('62')) {
-                    phone = '0' + phone.substring(2);
-                } else if (phone.startsWith('+62')) {
-                    phone = '0' + phone.substring(3);
+            if (!qrCode) {
+                const phoneForId = normalizedPhone || '';
+                const nameForId = row['Nama Pegawai']
+                    ? normalizeName(row['Nama Pegawai']).replace(/\s+/g, '').substring(0, 5).toUpperCase()
+                    : '';
+
+                if (!phoneForId && !nameForId) {
+                    rowsSkipped += 1;
+                    continue;
                 }
+
+                qrCode = `MUDIK_MANUAL_${nameForId}_${phoneForId}`.substring(0, 50);
+                console.log(`⚠️  Membuat ID Manual untuk baris tanpa QR: ${qrCode}`);
             }
 
             const kkUrl = row['Kartu Keluarga'];
             const idCardUrl = row['Kartu Tanda Pengenal Pegawai'];
-            const pegawaiName = row['Nama Pegawai'] ? row['Nama Pegawai'].trim().toLowerCase() : '';
+            const pegawaiNameNormalized = normalizeName(row['Nama Pegawai']);
 
             process.stdout.write(`Sedang memproses ${qrCode}... `);
 
-            // 1. Download Identity Image (KK and/or Pegawai Card)
             let localKtpPath = null;
             if (kkUrl && kkUrl.startsWith('http')) {
                 const filename = `${qrCode}_kk.jpg`;
@@ -202,82 +474,129 @@ async function migrate() {
                 localIdCardPath = await downloadImage(idCardUrl, filename);
             }
 
-            // 2. Insert Parent Registration
-            await client.query(`
-                        INSERT INTO registrations (id, phone, ktp_url, id_card_url)
-                        VALUES ($1, $2, $3, $4)
-                        ON CONFLICT (id) DO UPDATE SET
-                            phone = EXCLUDED.phone,
-                            ktp_url = COALESCE(EXCLUDED.ktp_url, registrations.ktp_url),
-                            id_card_url = COALESCE(EXCLUDED.id_card_url, registrations.id_card_url);
-                    `, [qrCode, phone, localKtpPath || kkUrl, localIdCardPath || idCardUrl]);
+            await client.query(
+                `INSERT INTO registrations (id, phone, phone_raw, ktp_url, id_card_url, active, last_seen_at)
+                 VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
+                 ON CONFLICT (id) DO UPDATE SET
+                     phone = EXCLUDED.phone,
+                     phone_raw = EXCLUDED.phone_raw,
+                     ktp_url = COALESCE(EXCLUDED.ktp_url, registrations.ktp_url),
+                     id_card_url = COALESCE(EXCLUDED.id_card_url, registrations.id_card_url),
+                     active = TRUE,
+                     last_seen_at = CURRENT_TIMESTAMP`,
+                [qrCode, normalizedPhone, phoneRaw, localKtpPath || kkUrl, localIdCardPath || idCardUrl],
+            );
+            processedRegistrationIds.add(qrCode);
 
-            // 3. Collect Passengers (up to 4)
+            await client.query(
+                'UPDATE passengers SET active = FALSE WHERE registration_id = $1',
+                [qrCode],
+            );
+
             const potentialPassengers = [
-                { nama: row['Nama Lengkap Penumpang 1'], nik: row['NIK'], ktpUrl: row['KTP Penumpang 1'] },
-                { nama: row['Nama Lengkap Penumpang 2'], nik: row['NIK 2'], ktpUrl: row['KTP Penumpang 2'] },
-                { nama: row['Nama Lengkap Penumpang 3'], nik: row['NIK 3'], ktpUrl: row['KTP Penumpang 3'] },
-                { nama: row['Nama Lengkap Penumpang 4'], nik: row['NIK 4'], ktpUrl: row['KTP Penumpang 4'] }
+                { slot: 1, nama: row['Nama Lengkap Penumpang 1'], nik: row['NIK'], ktpUrl: row['KTP Penumpang 1'] },
+                { slot: 2, nama: row['Nama Lengkap Penumpang 2'], nik: row['NIK 2'], ktpUrl: row['KTP Penumpang 2'] },
+                { slot: 3, nama: row['Nama Lengkap Penumpang 3'], nik: row['NIK 3'], ktpUrl: row['KTP Penumpang 3'] },
+                { slot: 4, nama: row['Nama Lengkap Penumpang 4'], nik: row['NIK 4'], ktpUrl: row['KTP Penumpang 4'] },
             ];
 
-            let pCount = 0;
+            let activePassengerCount = 0;
 
-            // Fetch existing passengers to avoid resetting check-in status
-            const existingRes = await client.query('SELECT id, nama FROM passengers WHERE registration_id = $1', [qrCode]);
-            const existingNames = existingRes.rows.map(r => r.nama.trim().toLowerCase());
+            for (const pData of potentialPassengers) {
+                if (!pData.nama || !pData.nama.trim()) continue;
 
-            for (const [index, pData] of potentialPassengers.entries()) {
-                if (pData.nama && pData.nama.trim()) {
-                    const trimmedName = pData.nama.trim();
-                    const isRegistrant = trimmedName.toLowerCase() === pegawaiName;
-                    const nik = pData.nik ? pData.nik.trim() : null;
+                const namaRaw = pData.nama.trim();
+                const namaNormalized = normalizeName(namaRaw);
+                if (!namaNormalized) continue;
 
-                    let localPassKtpPath = null;
-                    if (pData.ktpUrl && pData.ktpUrl.startsWith('http')) {
-                        const pFilename = `${qrCode}_pass_${index + 1}.jpg`;
-                        localPassKtpPath = await downloadImage(pData.ktpUrl, pFilename);
-                    }
-
-                    if (!existingNames.includes(trimmedName.toLowerCase())) {
-                        await client.query(`
-                                    INSERT INTO passengers (registration_id, nama, is_registrant, nik, ktp_url, verified)
-                                    VALUES ($1, $2, $3, $4, $5, FALSE);
-                                `, [qrCode, trimmedName, isRegistrant, nik, localPassKtpPath || pData.ktpUrl]);
-                        pCount++;
-                    }
+                const isRegistrant = namaNormalized.toLowerCase() === pegawaiNameNormalized.toLowerCase();
+                const nik = normalizeNik(pData.nik);
+                if (pData.nik && nik && nik.length !== 16) {
+                    console.warn(`⚠️ NIK tidak 16 digit pada ${qrCode} slot ${pData.slot}: ${pData.nik}`);
+                    rowHasWarning = true;
                 }
+
+                let localPassKtpPath = null;
+                if (pData.ktpUrl && pData.ktpUrl.startsWith('http')) {
+                    const pFilename = `${qrCode}_pass_${pData.slot}.jpg`;
+                    localPassKtpPath = await downloadImage(pData.ktpUrl, pFilename);
+                }
+
+                await client.query(
+                    `INSERT INTO passengers (
+                        registration_id,
+                        source_slot,
+                        nama,
+                        nama_raw,
+                        nama_normalized,
+                        is_registrant,
+                        nik,
+                        ktp_url,
+                        active,
+                        last_seen_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (registration_id, source_slot) WHERE source_slot IS NOT NULL DO UPDATE SET
+                        nama = EXCLUDED.nama,
+                        nama_raw = EXCLUDED.nama_raw,
+                        nama_normalized = EXCLUDED.nama_normalized,
+                        is_registrant = EXCLUDED.is_registrant,
+                        nik = EXCLUDED.nik,
+                        ktp_url = COALESCE(EXCLUDED.ktp_url, passengers.ktp_url),
+                        active = TRUE,
+                        last_seen_at = CURRENT_TIMESTAMP`,
+                    [
+                        qrCode,
+                        pData.slot,
+                        namaNormalized,
+                        namaRaw,
+                        namaNormalized,
+                        isRegistrant,
+                        nik,
+                        localPassKtpPath || pData.ktpUrl,
+                    ],
+                );
+                activePassengerCount += 1;
+                rowsUpserted += 1;
             }
 
-            console.log(`✅ OK (${pCount > 0 ? pCount + ' penumpang baru' : 'tidak ada perubahan'})`);
-        }
+            console.log(`✅ OK (${activePassengerCount} penumpang aktif)`);
 
-        // 4. Restore Verified Statuses
-        if (verifiedBackup.length > 0) {
-            console.log('\n♻️ Memulihkan status kehadiran peserta...');
-            let restoredCount = 0;
-            for (const backup of verifiedBackup) {
-                // Match by name and phone connection to ensure accuracy even if registration ID changed
-                const restoreRes = await client.query(`
-                    UPDATE passengers p
-                    SET verified = TRUE, verified_at = $1, verified_by = $2
-                    FROM registrations r
-                    WHERE p.registration_id = r.id 
-                    AND LOWER(TRIM(p.nama)) = LOWER(TRIM($3))
-                    AND r.phone = $4
-                    RETURNING p.id
-                `, [backup.verified_at, backup.verified_by, backup.nama, backup.phone]);
-                
-                restoredCount += restoreRes.rowCount;
+            if (rowHasWarning) {
+                rowsWithWarnings += 1;
             }
-            console.log(`✅ ${restoredCount} status kehadiran berhasil dipulihkan.`);
         }
 
-        console.log('\n✨ Migrasi Selesai!');
+        const processedIds = [...processedRegistrationIds];
+        if (processedIds.length > 0) {
+            await client.query(
+                `UPDATE registrations
+                 SET active = FALSE
+                 WHERE NOT (id = ANY($1::text[]))`,
+                [processedIds],
+            );
+
+            await client.query(
+                `UPDATE passengers p
+                 SET active = FALSE
+                 FROM registrations r
+                 WHERE p.registration_id = r.id
+                   AND r.active = FALSE`,
+            );
+        }
+
+        await client.query('COMMIT');
+
+        await finalizeSyncRun(syncRunId, 'success', rowsRead, rowsUpserted, rowsSkipped);
+        console.log(`\n✨ Sinkronisasi selesai! Baris dengan warning: ${rowsWithWarnings}`);
     } catch (err) {
-        console.error('\n❌ Error migrasi:', err);
+        await client.query('ROLLBACK');
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await finalizeSyncRun(syncRunId, 'failed', rowsRead, rowsUpserted, rowsSkipped, errorMessage);
+        console.error('\n❌ Error sinkronisasi:', err);
     } finally {
         client.release();
-        pool.end();
+        await pool.end();
     }
 }
 

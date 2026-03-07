@@ -35,7 +35,7 @@ self.addEventListener('fetch', (event) => {
     // Skip non-GET and cross-origin API requests
     if (event.request.method !== 'GET') return;
 
-    // Don't cache Google Apps Script API calls
+    // Don't cache external API calls
     const url = new URL(event.request.url);
     if (url.hostname.includes('script.google.com') ||
         url.hostname.includes('googleapis.com')) {

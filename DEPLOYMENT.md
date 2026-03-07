@@ -60,31 +60,22 @@ Jika ingin menggunakan domain (misal `mudik.example.com`) dan HTTPS:
 2.  Arahkan domain ke IP Proxmox/Container.
 3.  Proxy Pass port 80/443 ke `http://IP-CONTAINER:8080`.
 
-## 7. Migrasi Data (Jika ada)
-Jika Anda punya file `data.csv` dari Google Sheets:
-1.  Upload file `data.csv` ke folder `migration/` di server (bisa pakai FTP/SCP/WinSCP).
-2.  Karena kita pakai Docker, cara termudah menjalankan script migrasi adalah dengan membuat temporary container nodejs:
+## 7. Sinkronisasi Data Final (One-Shot)
+1. Upload `Data Pemudik Final.csv` ke root folder project di server.
+2. Jalankan import final satu kali:
 
 ```bash
-# Masuk ke folder project
 cd kiar
+npm ci
+npm run sync:final
+```
 
-# Install dependencies di lokal folder (akan membuat node_modules)
-docker run --rm -v "$PWD":/app -w /app node:20-alpine npm install
+Script akan membaca CSV lokal dan melakukan upsert ke database.
 
-# Jalankan script migrasi (menghubungi database via network docker default)
-# Note: Host 'postgres' dari dalam docker network 'kiar_default' mungkin tidak bisa diakses
-# Paling mudah: Jalankan script dari workstation Anda (laptop) yang terhubung ke DB server,
-# atau install nodejs di LXC host untuk menjalankannya.
+Jika path file berbeda, jalankan dengan env `CSV_FILE_PATH`:
 
-# Opsi Install NodeJS di LXC Host (Recommended for migration):
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-npm install
-
-# Pastikan DB port terekspos (edit docker-compose.yml tambah "5432:5432" di service postgres jika perlu)
-# lalu jalankan:
-node migration/migrate.js
+```bash
+CSV_FILE_PATH="/path/ke/file.csv" node migration/migrate_mudik.js
 ```
 
 ## Troubleshooting
