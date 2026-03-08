@@ -899,6 +899,28 @@ function updateVerifyButtonState() {
     : 'Semua Sudah Diverifikasi';
 }
 
+function previewPassengerSelection(
+  passengerListItems: HTMLDivElement,
+  item: HTMLDivElement,
+  passenger: PassengerData,
+) {
+  const existingSelected = passengerListItems.querySelector('.passenger-item.preview-selected') as HTMLDivElement | null;
+  if (existingSelected) existingSelected.classList.remove('preview-selected');
+
+  loadKtpImage(passenger.ktpUrl || '');
+  if (passenger.ktpUrl) {
+    setTimeout(() => {
+      ktpContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+  }
+
+  selectedByNamePassengerId = passenger.verified ? null : passenger.id;
+  if (!passenger.verified) {
+    item.classList.add('preview-selected');
+  }
+  updateVerifyButtonState();
+}
+
 function showVerifyData(passengers: PassengerData[]) {
   selectedByNamePassengerId = null;
   verifyLoading.style.display = 'none';
@@ -968,20 +990,19 @@ function showVerifyData(passengers: PassengerData[]) {
 
       details.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('input')) return;
-        const existingSelected = passengerListItems.querySelector('.passenger-item.preview-selected') as HTMLDivElement | null;
-        if (existingSelected) existingSelected.classList.remove('preview-selected');
+        previewPassengerSelection(passengerListItems, item, p);
+      });
 
-        loadKtpImage(p.ktpUrl || '');
-        if (p.ktpUrl) {
-          setTimeout(() => {
-            ktpContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 60);
+      item.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('input')) return;
+
+        if (!checkbox.disabled) {
+          checkbox.checked = !checkbox.checked;
+          updateSelectAllButtonState();
         }
-        selectedByNamePassengerId = p.verified ? null : p.id;
-        if (!p.verified) {
-          item.classList.add('preview-selected');
-        }
-        updateVerifyButtonState();
+
+        previewPassengerSelection(passengerListItems, item, p);
       });
 
       item.appendChild(checkbox);
