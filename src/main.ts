@@ -744,6 +744,12 @@ function focusLookupInput(select = false) {
   }
 }
 
+function leaveLookupInput() {
+  if (document.activeElement === manualIdInput) {
+    manualIdInput.blur();
+  }
+}
+
 function updateManualInputMode(mode: 'nik' | 'name') {
   manualIdInput.dataset.lookupMode = mode;
   manualIdInput.inputMode = mode === 'nik' ? 'numeric' : 'text';
@@ -817,6 +823,7 @@ async function handleScanResult(rawInput: string) {
     }
 
     currentMatches = result.passengers;
+    leaveLookupInput();
     showVerifyData(result.passengers);
     setTimeout(() => verifyData.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
 
@@ -1249,10 +1256,14 @@ function runGroupVerifyConfirm() {
   if (handler) handler();
 }
 
-function runGroupVerifyCancel() {
+function runGroupVerifySecondary() {
   const handler = groupVerifyOnCancel;
   closeGroupVerifyModal();
   if (handler) handler();
+}
+
+function dismissGroupVerifyModal() {
+  closeGroupVerifyModal();
 }
 
 function handleVerifyAllUnverified() {
@@ -1305,6 +1316,7 @@ manualForm.addEventListener('submit', (e) => {
   const id = normalizeLookupText(manualIdInput.value);
   if (!id) { showToast('Masukkan 6 digit NIK atau nama pemudik'); focusLookupInput(); return; }
   playScanBeep();
+  leaveLookupInput();
   handleScanResult(id);
   manualIdInput.value = '';
 });
@@ -1333,10 +1345,10 @@ retryScanBtn.addEventListener('click', () => {
 verifyBtn.addEventListener('click', () => { void handleVerify(); });
 verifyAllBtn.addEventListener('click', handleVerifyAllUnverified);
 groupVerifyConfirm.addEventListener('click', runGroupVerifyConfirm);
-groupVerifyCancel.addEventListener('click', runGroupVerifyCancel);
-closeGroupVerify.addEventListener('click', runGroupVerifyCancel);
+groupVerifyCancel.addEventListener('click', runGroupVerifySecondary);
+closeGroupVerify.addEventListener('click', dismissGroupVerifyModal);
 groupVerifyModal.addEventListener('click', (e) => {
-  if (e.target === groupVerifyModal) runGroupVerifyCancel();
+  if (e.target === groupVerifyModal) dismissGroupVerifyModal();
 });
 if (selectAllBtn) {
   selectAllBtn.addEventListener('click', () => {
@@ -1429,7 +1441,7 @@ document.addEventListener('keydown', (e) => {
 
   if (groupVerifyModal.style.display === 'flex' && e.key === 'Escape') {
     e.preventDefault();
-    runGroupVerifyCancel();
+    dismissGroupVerifyModal();
     return;
   }
 

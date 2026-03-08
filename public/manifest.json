@@ -1,8 +1,8 @@
 {
     "id": "/",
-    "name": "MUDIK — QR Scanner Verifikasi",
+    "name": "MUDIK — Verifikasi Peserta",
     "short_name": "MUDIK",
-    "description": "QR Scanner untuk verifikasi kehadiran/registrasi peserta. Scan cepat dengan sinkronisasi CSV lokal dan dukungan offline.",
+    "description": "MUDIK untuk verifikasi kehadiran dan registrasi peserta dengan sinkronisasi CSV lokal dan dukungan offline.",
     "start_url": "./",
     "scope": "./",
     "display": "standalone",
