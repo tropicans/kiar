@@ -506,13 +506,15 @@ app.get('/api/admin-summary', async (req, res) => {
             ),
             pool.query(
                 `SELECT
-                    COALESCE(NULLIF(trim(verified_by), ''), 'Unknown') AS verifier_name,
+                    trim(verified_by) AS verifier_name,
                     COUNT(*)::int AS total_actions,
                     MAX(verified_at) AS last_action_at
                  FROM passengers
-                 WHERE COALESCE(active, TRUE) = TRUE
-                   AND verified = TRUE
-                 GROUP BY COALESCE(NULLIF(trim(verified_by), ''), 'Unknown')
+                  WHERE COALESCE(active, TRUE) = TRUE
+                    AND verified = TRUE
+                    AND NULLIF(trim(verified_by), '') IS NOT NULL
+                    AND lower(trim(verified_by)) <> 'unknown'
+                 GROUP BY trim(verified_by)
                  ORDER BY total_actions DESC, last_action_at DESC
                  LIMIT 5`
             ),

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/svg+xml" href="/qr-icon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
     <!-- Using the same global stylesheet -->
     <link rel="stylesheet" href="/src/style.css" />
     <style>
@@ -304,18 +304,6 @@
             background: var(--bg-glass);
         }
 
-        .qr-cell {
-            text-align: center;
-        }
-
-        .qr-canvas {
-            background: white;
-            padding: 4px;
-            border-radius: 8px;
-            width: 80px;
-            height: 80px;
-        }
-
         .passenger-list {
             margin: 0;
             padding-left: 20px;
@@ -428,11 +416,6 @@
             .data-table td {
                 padding: 12px;
                 font-size: 13px;
-            }
-
-            .qr-canvas {
-                width: 60px;
-                height: 60px;
             }
 
             .admin-toast {
@@ -599,15 +582,6 @@
                             </svg>
                             <span class="btn-text">Ke Scanner</span>
                         </button>
-                        <button id="btnDownloadAll" class="btn-download-all" disabled>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            <span class="btn-text">Download Semua Kode</span>
-                        </button>
                     </div>
                 </div>
 
@@ -617,7 +591,6 @@
                             style="position: sticky; top: 0; z-index: 10; background: var(--bg-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
                             <tr>
                                 <th style="width: 50px;">No</th>
-                                <th style="width: 100px;">Kode</th>
                                 <th style="width: 140px;">ID Pendaftar</th>
                                 <th style="width: 140px;">No WhatsApp</th>
                                 <th>Daftar Penumpang</th>
@@ -626,7 +599,7 @@
                         </thead>
                         <tbody id="tableBody">
                             <tr>
-                                <td colspan="6" class="loading-state">
+                                <td colspan="5" class="loading-state">
                                     <div class="spinner"></div>
                                     Memuat data...
                                 </td>
@@ -674,9 +647,6 @@
         </button>
         <img id="ktpModalImage" class="modal-image" alt="KTP Full View" />
     </div>
-
-    <!-- Hidden canvas template for generating high-res QR codes for download -->
-    <canvas id="qrTemplateCanvas" style="display: none;"></canvas>
 
     <div class="admin-toast" id="adminToast">
         <span id="adminToastMessage"></span>

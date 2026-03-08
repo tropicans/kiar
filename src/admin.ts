@@ -1,6 +1,3 @@
-import QRCode from 'qrcode';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -73,7 +70,6 @@ const btnBackToHome = document.getElementById('btnBackToHome') as HTMLButtonElem
 
 const tableBody = document.getElementById('tableBody') as HTMLTableSectionElement;
 const totalDataCount = document.getElementById('totalDataCount') as HTMLSpanElement;
-const btnDownloadAll = document.getElementById('btnDownloadAll') as HTMLButtonElement;
 const themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
 const summaryRegistrations = document.getElementById('summaryRegistrations') as HTMLDivElement;
 const summaryRegistrationMeta = document.getElementById('summaryRegistrationMeta') as HTMLDivElement;
@@ -132,18 +128,8 @@ async function verifyAdminPin(enteredPin: string): Promise<boolean> {
 }
 
 async function unverifyPassenger(passengerId: number, passengerName: string) {
-    const storedAdminPinHash = getStoredAdminPinHash();
-    if (!storedAdminPinHash) {
-        throw new Error('Admin PIN belum diatur. Silakan set dulu dari halaman scanner.');
-    }
-
-    const enteredPin = window.prompt(`Masukkan Admin PIN untuk membatalkan verifikasi ${passengerName}:`, '');
-    if (enteredPin === null) return;
-
-    const isValidPin = await verifyAdminPin(enteredPin.trim());
-    if (!isValidPin) {
-        throw new Error('Admin PIN salah');
-    }
+    const approved = await requestAdminPinApproval(`membatalkan verifikasi ${passengerName}`);
+    if (!approved) return;
 
     const reason = window.prompt(`Alasan membatalkan verifikasi untuk ${passengerName}:`, 'Salah pilih operator');
     if (reason === null) return;
@@ -173,6 +159,61 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
     await loadData();
 }
 
+async function requestAdminPinApproval(targetLabel: string): Promise<boolean> {
+    const storedAdminPinHash = getStoredAdminPinHash();
+    if (!storedAdminPinHash) {
+        throw new Error('Admin PIN belum diatur. Silakan set dulu dari halaman scanner.');
+    }
+
+    const enteredPin = window.prompt(`Masukkan Admin PIN untuk ${targetLabel}:`, '');
+    if (enteredPin === null) return false;
+
+    const isValidPin = await verifyAdminPin(enteredPin.trim());
+    if (!isValidPin) {
+        throw new Error('Admin PIN salah');
+    }
+
+    return true;
+}
+
+async function unverifyRegistration(registrationId: string) {
+    const registration = registrationsData.find((item) => item.id === registrationId);
+    if (!registration) {
+        throw new Error('Rombongan tidak ditemukan');
+    }
+
+    const verifiedPassengers = registration.passengers.filter((passenger) => passenger.verified);
+    if (verifiedPassengers.length === 0) {
+        throw new Error('Belum ada penumpang terverifikasi di rombongan ini');
+    }
+
+    const approved = await requestAdminPinApproval(`membatalkan verifikasi rombongan ${registrationId}`);
+    if (!approved) return;
+
+    const reason = window.prompt(
+        `Alasan membatalkan ${verifiedPassengers.length} verifikasi pada rombongan ${registrationId}:`,
+        'Koreksi verifikasi rombongan',
+    );
+    if (reason === null) return;
+
+    const response = await fetch('/api/unverify-passengers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            passengerIds: verifiedPassengers.map((passenger) => passenger.id),
+            verifiedBy: 'Admin Dashboard',
+            reason,
+        }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+    }
+
+    await loadData();
+}
+
 (window as any).unverifyPassenger = async (passengerId: number, passengerName: string) => {
     try {
         await unverifyPassenger(passengerId, passengerName);
@@ -180,6 +221,16 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
     } catch (error: any) {
         console.error(error);
         showAdminToast(`Gagal membatalkan verifikasi: ${error.message}`);
+    }
+};
+
+(window as any).unverifyRegistration = async (registrationId: string) => {
+    try {
+        await unverifyRegistration(registrationId);
+        showAdminToast(`Semua verifikasi aktif di rombongan ${registrationId} berhasil dibatalkan.`);
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Gagal membatalkan verifikasi rombongan: ${error.message}`);
     }
 };
 
@@ -314,7 +365,7 @@ function renderSummary() {
     summaryPendingMeta.textContent = summary.pendingCount === 0 ? 'Semua penumpang aktif sudah terverifikasi' : 'Masih perlu tindak lanjut operator';
 
     if (topVerifiers.length === 0) {
-        topVerifiersList.innerHTML = '<div class="empty-mini-state">Belum ada aktivitas verifikasi.</div>';
+        topVerifiersList.innerHTML = '<div class="empty-mini-state">Belum ada nama petugas yang tercatat. Data lama masih memakai label Unknown.</div>';
     } else {
         topVerifiersList.innerHTML = topVerifiers.map((item) => `
             <div class="leaderboard-item">
@@ -389,14 +440,11 @@ async function loadData() {
         renderSummary();
 
         totalDataCount.textContent = registrationsData.length.toString();
-        if (registrationsData.length > 0) {
-            btnDownloadAll.disabled = false;
-        }
 
     } catch (err: any) {
         console.error(err);
         showAdminToast(`Gagal memuat dashboard: ${err.message}`);
-        tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-msg); padding: 32px;">Gagal memuat data: ${err.message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-msg); padding: 32px;">Gagal memuat data: ${err.message}</td></tr>`;
     }
 }
 
@@ -505,7 +553,7 @@ async function renderTable() {
     tableBody.innerHTML = '';
 
     if (filteredData.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 48px; color: var(--text-muted);">Tidak ada data yang cocok dengan pencarian</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 48px; color: var(--text-muted);">Tidak ada data yang cocok dengan pencarian</td></tr>`;
         paginationControls.style.display = 'none';
         return;
     }
@@ -563,9 +611,6 @@ async function renderTable() {
 
         tr.innerHTML = `
             <td>${actualIndex}</td>
-            <td class="qr-cell">
-                <canvas id="qr-canvas-${reg.id}" class="qr-canvas"></canvas>
-            </td>
             <td>
                 <strong style="font-size: 15px;">${reg.id}</strong><br>
                 ${ktpLink}
@@ -574,27 +619,15 @@ async function renderTable() {
             <td>${reg.phone || '-'}</td>
             <td>${passHtml}</td>
             <td style="text-align: center;">
-                <button class="btn-secondary-admin" onclick="downloadSingleQR('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> 
-                    Simpan
-                </button>
+                <div style="display:flex;flex-direction:column;gap:8px;align-items:center;">
+                    ${reg.passengers.some((passenger) => passenger.verified)
+                        ? `<button class="btn-secondary-admin" onclick="unverifyRegistration('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">↩ Batalkan Semua</button>`
+                        : '<span class="activity-meta">Belum ada aksi admin</span>'}
+                </div>
             </td>
         `;
 
         tableBody.appendChild(tr);
-
-        // Render QR Code to the canvas in the table
-        const canvas = document.getElementById(`qr-canvas-${reg.id}`) as HTMLCanvasElement;
-        if (canvas) {
-            await QRCode.toCanvas(canvas, reg.id, {
-                width: 80,
-                margin: 1,
-                color: {
-                    dark: '#000000',
-                    light: '#ffffff'
-                }
-            });
-        }
     }
 }
 
@@ -617,64 +650,3 @@ ktpModal.addEventListener('click', (e) => {
     }
 });
 
-// --- Download Logic ---
-
-// Expose single dwnload to window for inline onclick handler
-(window as any).downloadSingleQR = async (id: string) => {
-    try {
-        const qrDataUrl = await QRCode.toDataURL(id, {
-            width: 800, // High res for printing
-            margin: 2,
-            errorCorrectionLevel: 'H'
-        });
-
-        const link = document.createElement('a');
-        link.download = `QR_${id}.png`;
-        link.href = qrDataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    } catch (err) {
-        console.error('Failed to generate QR:', err);
-        alert('Gagal mendownload QR Code.');
-    }
-};
-
-btnDownloadAll.addEventListener('click', async () => {
-    if (registrationsData.length === 0) return;
-
-    btnDownloadAll.disabled = true;
-    const originalText = btnDownloadAll.innerHTML;
-    btnDownloadAll.innerHTML = '<span class="spinner" style="width: 20px; height: 20px; margin: 0; border-width: 2px;"></span> Memproses...';
-
-    try {
-        const zip = new JSZip();
-        const folder = zip.folder("QR_Mudik_Surabaya");
-
-        if (!folder) throw new Error("Could not create ZIP folder");
-
-        // Generate QR codes
-        for (const reg of registrationsData) {
-            const qrDataUrl = await QRCode.toDataURL(reg.id, {
-                width: 800, // High res for printing
-                margin: 2,
-                errorCorrectionLevel: 'H'
-            });
-
-            // Convert Base64 dataURL to Blob/Buffer for JSZip
-            const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, "");
-            folder.file(`QR_${reg.id}.png`, base64Data, { base64: true });
-        }
-
-        // Generate and download ZIP
-        const content = await zip.generateAsync({ type: "blob" });
-        saveAs(content, "QR_Codes_Mudik_All.zip");
-
-    } catch (err) {
-        console.error(err);
-        alert('Terjadi kesalahan saat membuat file ZIP.');
-    } finally {
-        btnDownloadAll.disabled = false;
-        btnDownloadAll.innerHTML = originalText;
-    }
-});
