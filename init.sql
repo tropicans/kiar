@@ -43,6 +43,19 @@ CREATE TABLE passenger_verifications (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE admin_change_logs (
+    id BIGSERIAL PRIMARY KEY,
+    entity_type VARCHAR(30) NOT NULL,
+    entity_id VARCHAR(100) NOT NULL,
+    field_name VARCHAR(50) NOT NULL,
+    action VARCHAR(30) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX passenger_verifications_passenger_idx ON passenger_verifications (passenger_id, verified_at DESC, id DESC);
 
 CREATE TABLE sync_runs (

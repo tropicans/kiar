@@ -67,6 +67,22 @@ interface AdminSummaryResponse {
     hourlyTrend: HourlyTrendPoint[];
 }
 
+interface AdminAuditEntry {
+    id: string;
+    entry_type: 'crud' | 'verification';
+    action: string;
+    entity_type: string;
+    entity_id: string;
+    field_name: string;
+    old_value: string | null;
+    new_value: string | null;
+    actor: string;
+    notes: string | null;
+    created_at: string;
+    passenger_name: string | null;
+    registration_id: string | null;
+}
+
 // --- DOM Elements ---
 const dashboardContent = document.getElementById('dashboardContent') as HTMLDivElement;
 const btnBackToHome = document.getElementById('btnBackToHome') as HTMLButtonElement;
@@ -87,6 +103,26 @@ const recentActivityList = document.getElementById('recentActivityList') as HTML
 const verificationTrendCanvas = document.getElementById('verificationTrendChart') as HTMLCanvasElement;
 const adminToast = document.getElementById('adminToast') as HTMLDivElement;
 const adminToastMessage = document.getElementById('adminToastMessage') as HTMLSpanElement;
+const auditTableBody = document.getElementById('auditTableBody') as HTMLTableSectionElement;
+const auditFilter = document.getElementById('auditFilter') as HTMLSelectElement;
+const statusFilter = document.getElementById('statusFilter') as HTMLSelectElement;
+const activeFilter = document.getElementById('activeFilter') as HTMLSelectElement;
+const crudModal = document.getElementById('crudModal') as HTMLDivElement;
+const crudModalHeading = document.getElementById('crudModalHeading') as HTMLHeadingElement;
+const crudModalSubtitle = document.getElementById('crudModalSubtitle') as HTMLDivElement;
+const crudFieldPrimary = document.getElementById('crudFieldPrimary') as HTMLInputElement;
+const crudFieldSecondary = document.getElementById('crudFieldSecondary') as HTMLInputElement;
+const crudFieldSecondaryWrap = document.getElementById('crudFieldSecondaryWrap') as HTMLDivElement;
+const crudFieldTertiary = document.getElementById('crudFieldTertiary') as HTMLInputElement;
+const crudFieldTertiaryWrap = document.getElementById('crudFieldTertiaryWrap') as HTMLDivElement;
+const crudActiveWrap = document.getElementById('crudActiveWrap') as HTMLLabelElement;
+const crudActiveCheckbox = document.getElementById('crudActiveCheckbox') as HTMLInputElement;
+const crudActiveLabel = document.getElementById('crudActiveLabel') as HTMLSpanElement;
+const crudAdminPin = document.getElementById('crudAdminPin') as HTMLInputElement;
+const crudModalError = document.getElementById('crudModalError') as HTMLDivElement;
+const closeCrudModal = document.getElementById('closeCrudModal') as HTMLButtonElement;
+const crudCancelBtn = document.getElementById('crudCancelBtn') as HTMLButtonElement;
+const crudSaveBtn = document.getElementById('crudSaveBtn') as HTMLButtonElement;
 
 // Search and Pagination Elements
 const searchInput = document.getElementById('searchInput') as HTMLInputElement;
@@ -110,8 +146,13 @@ let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
 const ADMIN_PIN_KEY = 'qrscan_admin_pin';
 let adminSummaryData: AdminSummaryResponse | null = null;
+let adminAuditEntries: AdminAuditEntry[] = [];
 let verificationTrendChart: Chart | null = null;
 let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
+type CrudModalState =
+    | { kind: 'registration'; registrationId: string }
+    | { kind: 'passenger'; passengerId: number };
+let crudModalState: CrudModalState | null = null;
 
 function getStoredAdminPinHash(): string {
     return localStorage.getItem(ADMIN_PIN_KEY) || '';
@@ -128,6 +169,119 @@ async function verifyAdminPin(enteredPin: string): Promise<boolean> {
     if (!storedHash) return false;
     const enteredHash = await hashPin(enteredPin);
     return enteredHash === storedHash;
+}
+
+function getRegistrationById(registrationId: string): Registration | undefined {
+    return registrationsData.find((item) => item.id === registrationId);
+}
+
+function getPassengerById(passengerId: number): Passenger | undefined {
+    return registrationsData.flatMap((registration) => registration.passengers).find((item) => item.id === passengerId);
+}
+
+function showCrudError(message: string) {
+    crudModalError.textContent = message;
+    crudModalError.style.display = 'block';
+}
+
+function hideCrudError() {
+    crudModalError.style.display = 'none';
+    crudModalError.textContent = '';
+}
+
+function closeCrudEditor() {
+    crudModalState = null;
+    crudModal.style.display = 'none';
+    crudFieldPrimary.value = '';
+    crudFieldSecondary.value = '';
+    crudFieldTertiary.value = '';
+    crudAdminPin.value = '';
+    crudActiveCheckbox.checked = false;
+    hideCrudError();
+}
+
+function openRegistrationCrudModal(registration: Registration) {
+    crudModalState = { kind: 'registration', registrationId: registration.id };
+    crudModalHeading.textContent = `Edit Rombongan ${registration.id}`;
+    crudModalSubtitle.textContent = 'Perbarui nomor WA dan status aktif rombongan.';
+    crudFieldPrimary.value = registration.phone || registration.phoneRaw || '';
+    crudFieldPrimary.placeholder = 'Nomor WA';
+    crudFieldSecondaryWrap.style.display = 'grid';
+    crudFieldSecondary.previousElementSibling!.textContent = 'URL KK / KTP keluarga';
+    crudFieldSecondary.value = registration.ktpUrl || '';
+    crudFieldSecondary.placeholder = 'https://...';
+    crudFieldTertiaryWrap.style.display = 'grid';
+    crudFieldTertiary.previousElementSibling!.textContent = 'URL ID Card';
+    crudFieldTertiary.value = registration.idCardUrl || '';
+    crudFieldTertiary.placeholder = 'https://...';
+    crudActiveWrap.style.display = 'flex';
+    crudActiveCheckbox.checked = registration.active;
+    crudActiveLabel.textContent = 'Rombongan aktif';
+    crudAdminPin.value = '';
+    hideCrudError();
+    crudModal.style.display = 'flex';
+    window.setTimeout(() => crudFieldPrimary.focus(), 60);
+}
+
+function openPassengerCrudModal(passenger: Passenger) {
+    crudModalState = { kind: 'passenger', passengerId: passenger.id };
+    crudModalHeading.textContent = `Edit Penumpang ${passenger.nama}`;
+    crudModalSubtitle.textContent = 'Koreksi nama, NIK, dan status aktif penumpang.';
+    crudFieldPrimary.value = passenger.nama;
+    crudFieldPrimary.placeholder = 'Nama penumpang';
+    crudFieldSecondaryWrap.style.display = 'grid';
+    crudFieldSecondary.value = passenger.nik || '';
+    crudFieldSecondary.placeholder = 'NIK penumpang';
+    crudFieldSecondary.previousElementSibling!.textContent = 'NIK penumpang';
+    crudFieldTertiaryWrap.style.display = 'grid';
+    crudFieldTertiary.previousElementSibling!.textContent = 'URL KTP penumpang';
+    crudFieldTertiary.value = passenger.ktpUrl || '';
+    crudFieldTertiary.placeholder = 'https://...';
+    crudActiveWrap.style.display = 'flex';
+    crudActiveCheckbox.checked = passenger.active;
+    crudActiveLabel.textContent = 'Penumpang aktif';
+    crudAdminPin.value = '';
+    hideCrudError();
+    crudModal.style.display = 'flex';
+    window.setTimeout(() => crudFieldPrimary.focus(), 60);
+}
+
+async function saveCrudModal() {
+    if (!crudModalState) return;
+
+    const enteredPin = crudAdminPin.value.trim();
+    if (!enteredPin) {
+        showCrudError('Masukkan Admin PIN.');
+        return;
+    }
+
+    const isValidPin = await verifyAdminPin(enteredPin);
+    if (!isValidPin) {
+        showCrudError('Admin PIN salah.');
+        crudAdminPin.focus();
+        return;
+    }
+
+    if (crudModalState.kind === 'registration') {
+        await updateRegistration(crudModalState.registrationId, {
+            phone: crudFieldPrimary.value,
+            ktpUrl: crudFieldSecondary.value,
+            idCardUrl: crudFieldTertiary.value,
+            active: crudActiveCheckbox.checked,
+        });
+        closeCrudEditor();
+        showAdminToast(`Rombongan ${crudModalState.registrationId} berhasil diperbarui.`);
+        return;
+    }
+
+    await updatePassenger(crudModalState.passengerId, {
+        nama: crudFieldPrimary.value,
+        nik: crudFieldSecondary.value,
+        ktpUrl: crudFieldTertiary.value,
+        active: crudActiveCheckbox.checked,
+    });
+    closeCrudEditor();
+    showAdminToast('Data penumpang berhasil diperbarui.');
 }
 
 async function unverifyPassenger(passengerId: number, passengerName: string) {
@@ -217,7 +371,7 @@ async function unverifyRegistration(registrationId: string) {
     await loadData();
 }
 
-async function updateRegistration(registrationId: string, payload: { phone?: string | null; active?: boolean }) {
+async function updateRegistration(registrationId: string, payload: { phone?: string | null; ktpUrl?: string | null; idCardUrl?: string | null; active?: boolean }) {
     const response = await fetch(`/api/admin/registrations/${encodeURIComponent(registrationId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -232,7 +386,7 @@ async function updateRegistration(registrationId: string, payload: { phone?: str
     await loadData();
 }
 
-async function updatePassenger(passengerId: number, payload: { nama?: string; nik?: string | null; active?: boolean }) {
+async function updatePassenger(passengerId: number, payload: { nama?: string; nik?: string | null; ktpUrl?: string | null; active?: boolean }) {
     const response = await fetch(`/api/admin/passengers/${passengerId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -248,18 +402,11 @@ async function updatePassenger(passengerId: number, payload: { nama?: string; ni
 }
 
 async function editRegistrationPhone(registrationId: string) {
-    const registration = registrationsData.find((item) => item.id === registrationId);
+    const registration = getRegistrationById(registrationId);
     if (!registration) {
         throw new Error('Rombongan tidak ditemukan');
     }
-
-    const approved = await requestAdminPinApproval(`mengubah nomor WA rombongan ${registrationId}`);
-    if (!approved) return;
-
-    const nextPhone = window.prompt(`Nomor WA untuk ${registrationId}:`, registration.phone || registration.phoneRaw || '');
-    if (nextPhone === null) return;
-
-    await updateRegistration(registrationId, { phone: nextPhone });
+    openRegistrationCrudModal(registration);
 }
 
 async function toggleRegistrationActive(registrationId: string) {
@@ -276,20 +423,11 @@ async function toggleRegistrationActive(registrationId: string) {
 }
 
 async function editPassenger(passengerId: number) {
-    const passenger = registrationsData.flatMap((registration) => registration.passengers).find((item) => item.id === passengerId);
+    const passenger = getPassengerById(passengerId);
     if (!passenger) {
         throw new Error('Penumpang tidak ditemukan');
     }
-
-    const approved = await requestAdminPinApproval(`mengubah data penumpang ${passenger.nama}`);
-    if (!approved) return;
-
-    const nextName = window.prompt('Nama penumpang:', passenger.nama);
-    if (nextName === null) return;
-    const nextNik = window.prompt('NIK penumpang (boleh kosong):', passenger.nik || '');
-    if (nextNik === null) return;
-
-    await updatePassenger(passengerId, { nama: nextName, nik: nextNik });
+    openPassengerCrudModal(passenger);
 }
 
 async function togglePassengerActive(passengerId: number) {
@@ -387,6 +525,25 @@ function toggleTheme() {
 }
 
 themeToggle.addEventListener('click', toggleTheme);
+statusFilter.addEventListener('change', () => {
+    currentPage = 1;
+    applySearchFilter();
+    renderTable();
+});
+activeFilter.addEventListener('change', () => {
+    currentPage = 1;
+    applySearchFilter();
+    renderTable();
+});
+closeCrudModal.addEventListener('click', closeCrudEditor);
+crudCancelBtn.addEventListener('click', closeCrudEditor);
+crudSaveBtn.addEventListener('click', () => { void saveCrudModal(); });
+auditFilter.addEventListener('change', renderAuditTable);
+crudModal.addEventListener('click', (event) => {
+    if (event.target === crudModal) {
+        closeCrudEditor();
+    }
+});
 
 function showAdminToast(message: string) {
     adminToastMessage.textContent = message;
@@ -411,13 +568,26 @@ function formatDateTime(value: string | null | undefined): string {
 
 function applySearchFilter() {
     const query = searchInput.value.toLowerCase().trim();
-
-    if (!query) {
-        filteredData = [...registrationsData];
-        return;
-    }
+    const statusMode = statusFilter.value;
+    const activeMode = activeFilter.value;
 
     filteredData = registrationsData.filter((reg) => {
+        const matchesStatus = statusMode === 'all'
+            || (statusMode === 'verified' && reg.passengers.some((p) => p.verified))
+            || (statusMode === 'pending' && !reg.passengers.some((p) => p.verified));
+        const matchesActive = activeMode === 'all'
+            || (activeMode === 'active' && reg.active)
+            || (activeMode === 'inactive' && true)
+            || (activeMode === 'only-inactive' && !reg.active);
+
+        if (!matchesStatus || !matchesActive) {
+            return false;
+        }
+
+        if (!query) {
+            return true;
+        }
+
         const matchId = reg.id.toLowerCase().includes(query);
         const matchPhone = reg.phone && reg.phone.includes(query);
         const matchRegistrationState = reg.active
@@ -534,6 +704,43 @@ function renderSummary() {
     renderTrendChart(hourlyTrend);
 }
 
+function renderAuditTable() {
+    const filterMode = auditFilter.value;
+    const visibleEntries = adminAuditEntries.filter((entry) => {
+        if (filterMode === 'all') return true;
+        if (filterMode === 'crud') return entry.entry_type === 'crud';
+        if (filterMode === 'verification') return entry.entry_type === 'verification';
+        if (filterMode === 'unverify') return entry.action === 'unverify';
+        if (filterMode === 'toggle_active') return entry.action === 'toggle_active';
+        if (filterMode === 'update') return entry.action === 'update';
+        return true;
+    });
+
+    if (visibleEntries.length === 0) {
+        auditTableBody.innerHTML = '<tr><td colspan="5" class="loading-state">Belum ada audit admin.</td></tr>';
+        return;
+    }
+
+    auditTableBody.innerHTML = visibleEntries.map((entry) => {
+        const target = entry.entry_type === 'crud'
+            ? `${entry.entity_type} ${entry.entity_id}`
+            : `${entry.passenger_name || 'Penumpang'}${entry.registration_id ? ` - ${entry.registration_id}` : ''}`;
+        const changeText = entry.entry_type === 'crud'
+            ? `${entry.field_name}: ${entry.old_value || '-'} -> ${entry.new_value || '-'}`
+            : `${entry.action === 'unverify' ? 'Batalkan verifikasi' : entry.action}${entry.notes ? ` (${entry.notes})` : ''}`;
+
+        return `
+            <tr>
+                <td>${formatDateTime(entry.created_at)}</td>
+                <td><span class="activity-badge ${entry.action === 'unverify' ? 'unverify' : 'verify'}">${entry.entry_type === 'crud' ? 'CRUD' : 'Verifikasi'}</span></td>
+                <td>${target}</td>
+                <td class="audit-value">${changeText}</td>
+                <td>${entry.actor || 'Admin Dashboard'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 // Check secure session access set by main app
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
@@ -559,6 +766,10 @@ async function loadData() {
 
         const rawData: Registration[] = await registrationsResponse.json();
         adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
+        const auditResponse = await fetch('/api/admin-audit');
+        if (!auditResponse.ok) throw new Error('Failed to fetch admin audit');
+        const auditPayload = await auditResponse.json() as { entries: AdminAuditEntry[] };
+        adminAuditEntries = Array.isArray(auditPayload.entries) ? auditPayload.entries : [];
 
         registrationsData = rawData;
 
@@ -574,6 +785,7 @@ async function loadData() {
 
         renderTable();
         renderSummary();
+        renderAuditTable();
 
         totalDataCount.textContent = registrationsData.length.toString();
 
@@ -725,6 +937,9 @@ async function renderTable() {
             const verificationMeta = p.verified
                 ? `<div class="activity-meta" style="margin-top:6px;">Diverifikasi ${p.verifiedBy || 'Unknown'} • ${formatDateTime(p.verifiedAt)}</div>`
                 : '<div class="activity-meta" style="margin-top:6px;">Belum diverifikasi</div>';
+            const mediaMeta = p.ktpUrl
+                ? `<div class="activity-meta" style="margin-top:4px;">KTP penumpang tersedia</div>`
+                : '<div class="activity-meta" style="margin-top:4px;">KTP penumpang belum diisi</div>';
             const statusBadge = p.verified
                 ? '<span class="status-badge status-verified">Verified</span>'
                 : '<span class="status-badge status-pending">Pending</span>';
@@ -740,6 +955,7 @@ async function renderTable() {
                     </div>
                     ${(nikLabel || ktpLink || editAction || toggleAction || unverifyAction) ? `<div class="pill-footer">${nikLabel} ${ktpLink} ${editAction} ${toggleAction} ${unverifyAction}</div>` : ''}
                     ${verificationMeta}
+                    ${mediaMeta}
                 </div>
             `;
         });

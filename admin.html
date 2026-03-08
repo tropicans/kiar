@@ -248,6 +248,87 @@
             display: flex;
         }
 
+        .admin-filter-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 0 0 16px;
+        }
+
+        .admin-filter-select {
+            min-width: 180px;
+            height: 44px;
+            border-radius: 12px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-primary);
+            padding: 0 14px;
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .crud-modal-body {
+            display: grid;
+            gap: 14px;
+        }
+
+        .crud-modal-title {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        .crud-field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .crud-field label {
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .crud-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .crud-error {
+            color: #fda4af;
+            font-size: 13px;
+        }
+
+        .audit-section {
+            margin-top: 24px;
+            padding: 20px;
+            border-radius: 18px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .audit-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        .audit-table th,
+        .audit-table td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-glass);
+            font-size: 13px;
+            vertical-align: top;
+        }
+
+        .audit-value {
+            color: var(--text-secondary);
+            word-break: break-word;
+        }
+
         .btn-secondary-admin {
             background: transparent;
             color: var(--text-primary);
@@ -585,6 +666,57 @@
                     </div>
                 </div>
 
+                <div class="admin-filter-row">
+                    <select id="statusFilter" class="admin-filter-select">
+                        <option value="all">Semua Status Verifikasi</option>
+                        <option value="verified">Ada yang verified</option>
+                        <option value="pending">Belum ada verified</option>
+                    </select>
+                    <select id="activeFilter" class="admin-filter-select">
+                        <option value="all">Semua Status Aktif</option>
+                        <option value="active">Hanya aktif</option>
+                        <option value="inactive">Termasuk nonaktif</option>
+                        <option value="only-inactive">Hanya nonaktif</option>
+                    </select>
+                </div>
+
+                <section class="audit-section">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-title">Audit Admin</div>
+                            <div class="panel-subtitle">Riwayat perubahan CRUD dan pembatalan verifikasi terbaru</div>
+                        </div>
+                        <div class="admin-filter-row" style="margin:0; justify-content:flex-end;">
+                            <select id="auditFilter" class="admin-filter-select" style="min-width: 220px;">
+                                <option value="all">Semua Audit</option>
+                                <option value="crud">Hanya CRUD</option>
+                                <option value="verification">Hanya Verifikasi</option>
+                                <option value="unverify">Hanya Batalkan Verifikasi</option>
+                                <option value="toggle_active">Hanya Toggle Aktif</option>
+                                <option value="update">Hanya Update Data</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="data-table-wrapper">
+                        <table class="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>Tipe</th>
+                                    <th>Target</th>
+                                    <th>Perubahan</th>
+                                    <th>Pelaku</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditTableBody">
+                                <tr>
+                                    <td colspan="5" class="loading-state">Memuat audit...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
                 <div class="data-table-wrapper">
                     <table class="data-table">
                         <thead
@@ -650,6 +782,48 @@
 
     <div class="admin-toast" id="adminToast">
         <span id="adminToastMessage"></span>
+    </div>
+
+    <div class="settings-modal" id="crudModal" style="display:none;">
+        <div class="settings-card" style="max-width:520px;">
+            <div class="settings-header">
+                <h2 id="crudModalHeading">Edit Data</h2>
+                <button id="closeCrudModal" class="icon-btn" title="Tutup">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="settings-body crud-modal-body">
+                <div class="crud-modal-title" id="crudModalSubtitle">Perbarui data operasional dengan aman.</div>
+                <div class="crud-field">
+                    <label for="crudFieldPrimary">Field utama</label>
+                    <input id="crudFieldPrimary" class="settings-input" type="text" autocomplete="off" />
+                </div>
+                <div class="crud-field" id="crudFieldSecondaryWrap">
+                    <label for="crudFieldSecondary">Field kedua</label>
+                    <input id="crudFieldSecondary" class="settings-input" type="text" autocomplete="off" />
+                </div>
+                <div class="crud-field" id="crudFieldTertiaryWrap" style="display:none;">
+                    <label for="crudFieldTertiary">Field ketiga</label>
+                    <input id="crudFieldTertiary" class="settings-input" type="text" autocomplete="off" />
+                </div>
+                <label class="crud-checkbox" id="crudActiveWrap" style="display:none;">
+                    <input id="crudActiveCheckbox" type="checkbox" />
+                    <span id="crudActiveLabel">Status aktif</span>
+                </label>
+                <div class="crud-field">
+                    <label for="crudAdminPin">Admin PIN</label>
+                    <input id="crudAdminPin" class="settings-input" type="password" inputmode="numeric" autocomplete="off" />
+                </div>
+                <div class="crud-error" id="crudModalError" style="display:none;"></div>
+            </div>
+            <div class="settings-footer">
+                <button id="crudCancelBtn" class="btn btn-ghost" type="button">Batal</button>
+                <button id="crudSaveBtn" class="btn btn-primary" type="button">Simpan</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="/src/admin.ts"></script>

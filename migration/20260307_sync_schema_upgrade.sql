@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS passenger_verifications (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS admin_change_logs (
+    id BIGSERIAL PRIMARY KEY,
+    entity_type VARCHAR(30) NOT NULL,
+    entity_id VARCHAR(100) NOT NULL,
+    field_name VARCHAR(50) NOT NULL,
+    action VARCHAR(30) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify';
 ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT;
 

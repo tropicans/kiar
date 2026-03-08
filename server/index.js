@@ -66,6 +66,74 @@ async function ensureAuditSchema() {
     await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
 }
 
+async function ensureAdminChangeSchema() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS admin_change_logs (
+            id BIGSERIAL PRIMARY KEY,
+            entity_type VARCHAR(30) NOT NULL,
+            entity_id VARCHAR(100) NOT NULL,
+            field_name VARCHAR(50) NOT NULL,
+            action VARCHAR(30) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
+            notes TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+}
+
+async function appendAdminChangeLogs(client, changes, actor = 'Admin Dashboard', notes = null) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+        return;
+    }
+
+    const values = [];
+    const placeholders = changes.map((change, index) => {
+        const base = index * 8;
+        values.push(
+            change.entityType,
+            change.entityId,
+            change.fieldName,
+            change.action,
+            change.oldValue,
+            change.newValue,
+            actor,
+            notes,
+        );
+
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
+    });
+
+    await client.query(
+        `INSERT INTO admin_change_logs (entity_type, entity_id, field_name, action, old_value, new_value, actor, notes)
+         VALUES ${placeholders.join(', ')}`,
+        values,
+    );
+}
+
+function createChangeLogEntries(entityType, entityId, previousRow, nextRow, fieldConfigs) {
+    return fieldConfigs.flatMap((fieldConfig) => {
+        const previousValue = previousRow?.[fieldConfig.column] ?? null;
+        const nextValue = nextRow?.[fieldConfig.column] ?? null;
+        const previousNormalized = previousValue == null ? null : String(previousValue);
+        const nextNormalized = nextValue == null ? null : String(nextValue);
+
+        if (previousNormalized === nextNormalized) {
+            return [];
+        }
+
+        return [{
+            entityType,
+            entityId: String(entityId),
+            fieldName: fieldConfig.fieldName,
+            action: fieldConfig.action,
+            oldValue: previousNormalized,
+            newValue: nextNormalized,
+        }];
+    });
+}
+
 async function appendPassengerVerificationEvents(client, passengerIds, verifiedBy, source, action, notes = null) {
     if (!Array.isArray(passengerIds) || passengerIds.length === 0) {
         return;
@@ -442,8 +510,9 @@ app.post('/api/verify-passengers', async (req, res) => {
 
 app.patch('/api/admin/registrations/:id', async (req, res) => {
     try {
+        await ensureAdminChangeSchema();
         const { id } = req.params;
-        const { phone, active } = req.body || {};
+        const { phone, ktpUrl, idCardUrl, active } = req.body || {};
         const updates = [];
         const values = [];
 
@@ -453,6 +522,16 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
             values.push(normalizedPhone || null);
             updates.push(`phone_raw = $${values.length + 1}`);
             values.push(normalizedPhone || null);
+        }
+
+        if (ktpUrl !== undefined) {
+            updates.push(`ktp_url = $${values.length + 1}`);
+            values.push(normalizeAdminText(ktpUrl) || null);
+        }
+
+        if (idCardUrl !== undefined) {
+            updates.push(`id_card_url = $${values.length + 1}`);
+            values.push(normalizeAdminText(idCardUrl) || null);
         }
 
         if (active !== undefined) {
@@ -472,6 +551,12 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            const previousRegistrationRes = await client.query('SELECT * FROM registrations WHERE id = $1 FOR UPDATE', [id]);
+            if (previousRegistrationRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Rombongan tidak ditemukan' });
+            }
+
             const registrationRes = await client.query(
                 `UPDATE registrations
                  SET ${updates.join(', ')}
@@ -480,10 +565,15 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
                 values,
             );
 
-            if (registrationRes.rows.length === 0) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ error: 'Rombongan tidak ditemukan' });
-            }
+            const previousRegistration = previousRegistrationRes.rows[0];
+            const nextRegistration = registrationRes.rows[0];
+
+            const changeEntries = createChangeLogEntries('registration', id, previousRegistration, nextRegistration, [
+                { column: 'phone', fieldName: 'phone', action: 'update' },
+                { column: 'ktp_url', fieldName: 'ktp_url', action: 'update' },
+                { column: 'id_card_url', fieldName: 'id_card_url', action: 'update' },
+                { column: 'active', fieldName: 'active', action: 'toggle_active' },
+            ]);
 
             if (typeof active === 'boolean') {
                 await client.query(
@@ -491,6 +581,8 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
                     [active, id],
                 );
             }
+
+            await appendAdminChangeLogs(client, changeEntries);
 
             await client.query('COMMIT');
             return res.json({ success: true, registration: registrationRes.rows[0] });
@@ -508,12 +600,13 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
 
 app.patch('/api/admin/passengers/:id', async (req, res) => {
     try {
+        await ensureAdminChangeSchema();
         const passengerId = parseInt(req.params.id, 10);
         if (!Number.isInteger(passengerId)) {
             return res.status(400).json({ error: 'ID penumpang tidak valid' });
         }
 
-        const { nama, nik, active } = req.body || {};
+        const { nama, nik, ktpUrl, active } = req.body || {};
         const updates = [];
         const values = [];
 
@@ -535,6 +628,11 @@ app.patch('/api/admin/passengers/:id', async (req, res) => {
             values.push(normalizeAdminNik(nik));
         }
 
+        if (ktpUrl !== undefined) {
+            updates.push(`ktp_url = $${values.length + 1}`);
+            values.push(normalizeAdminText(ktpUrl) || null);
+        }
+
         if (active !== undefined) {
             if (typeof active !== 'boolean') {
                 return res.status(400).json({ error: 'Nilai active harus boolean' });
@@ -549,19 +647,41 @@ app.patch('/api/admin/passengers/:id', async (req, res) => {
 
         values.push(passengerId);
 
-        const result = await pool.query(
-            `UPDATE passengers
-             SET ${updates.join(', ')}
-             WHERE id = $${values.length}
-             RETURNING *`,
-            values,
-        );
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const previousPassengerRes = await client.query('SELECT * FROM passengers WHERE id = $1 FOR UPDATE', [passengerId]);
+            if (previousPassengerRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Penumpang tidak ditemukan' });
+            }
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Penumpang tidak ditemukan' });
+            const result = await client.query(
+                `UPDATE passengers
+                 SET ${updates.join(', ')}
+                 WHERE id = $${values.length}
+                 RETURNING *`,
+                values,
+            );
+
+            const previousPassenger = previousPassengerRes.rows[0];
+            const nextPassenger = result.rows[0];
+            const changeEntries = createChangeLogEntries('passenger', String(passengerId), previousPassenger, nextPassenger, [
+                { column: 'nama', fieldName: 'nama', action: 'update' },
+                { column: 'nik', fieldName: 'nik', action: 'update' },
+                { column: 'ktp_url', fieldName: 'ktp_url', action: 'update' },
+                { column: 'active', fieldName: 'active', action: 'toggle_active' },
+            ]);
+            await appendAdminChangeLogs(client, changeEntries);
+
+            await client.query('COMMIT');
+            res.json({ success: true, passenger: result.rows[0] });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
-
-        res.json({ success: true, passenger: result.rows[0] });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -764,6 +884,60 @@ app.get('/api/admin-summary', async (req, res) => {
                 unverifyActions: Number(row.unverify_actions || 0),
             })),
         });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/admin-audit', async (req, res) => {
+    try {
+        await ensureAuditSchema();
+        await ensureAdminChangeSchema();
+
+        const result = await pool.query(
+            `SELECT * FROM (
+                SELECT
+                    CONCAT('change-', acl.id) AS id,
+                    'crud' AS entry_type,
+                    acl.action,
+                    acl.entity_type,
+                    acl.entity_id,
+                    acl.field_name,
+                    acl.old_value,
+                    acl.new_value,
+                    acl.actor,
+                    acl.notes,
+                    acl.created_at,
+                    NULL::text AS passenger_name,
+                    NULL::text AS registration_id
+                FROM admin_change_logs acl
+
+                UNION ALL
+
+                SELECT
+                    CONCAT('verification-', pv.id) AS id,
+                    'verification' AS entry_type,
+                    pv.action,
+                    'passenger' AS entity_type,
+                    CAST(pv.passenger_id AS text) AS entity_id,
+                    'verification' AS field_name,
+                    NULL::text AS old_value,
+                    NULL::text AS new_value,
+                    pv.verified_by AS actor,
+                    pv.notes,
+                    pv.verified_at AS created_at,
+                    p.nama AS passenger_name,
+                    p.registration_id
+                FROM passenger_verifications pv
+                JOIN passengers p ON p.id = pv.passenger_id
+                WHERE pv.action = 'unverify'
+            ) entries
+            ORDER BY created_at DESC, id DESC
+            LIMIT 100`
+        );
+
+        res.json({ entries: result.rows });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
