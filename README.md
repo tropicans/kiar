@@ -69,3 +69,14 @@ npm run sync:final
 ```
 
 Lihat [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) untuk detail sinkronisasi.
+
+## 💻 Setup di Laptop Baru
+
+Kalau project ini dipindahkan ke laptop lain, ingat bahwa `git pull` tidak otomatis membawa database PostgreSQL.
+
+Panduan lengkap ada di:
+- [SETUP_LAPTOP_BARU.md](./SETUP_LAPTOP_BARU.md)
+
+Di dokumen itu dijelaskan dua opsi:
+- clone repo + import ulang dari `Data Pemudik Final.csv`
+- clone repo + restore dump PostgreSQL kalau ingin histori operasional ikut terbawa
