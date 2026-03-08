@@ -477,6 +477,153 @@ app.post('/api/unverify-passengers', async (req, res) => {
     }
 });
 
+app.get('/api/admin-summary', async (req, res) => {
+    try {
+        await ensureAuditSchema();
+
+        const [countResult, registrationBreakdownResult, topVerifiersResult, recentActivityResult, hourlyTrendResult] = await Promise.all([
+            pool.query(
+                `SELECT
+                    (SELECT COUNT(*) FROM registrations WHERE COALESCE(active, TRUE) = TRUE) AS registrations_count,
+                    (SELECT COUNT(*) FROM passengers WHERE COALESCE(active, TRUE) = TRUE) AS passengers_count,
+                    (SELECT COUNT(*) FROM passengers WHERE COALESCE(active, TRUE) = TRUE AND verified = TRUE) AS verified_count`
+            ),
+            pool.query(
+                `SELECT
+                    COUNT(*) FILTER (WHERE stats.verified_count = stats.passenger_count AND stats.passenger_count > 0) AS fully_verified_count,
+                    COUNT(*) FILTER (WHERE stats.verified_count > 0 AND stats.verified_count < stats.passenger_count) AS partial_verified_count,
+                    COUNT(*) FILTER (WHERE stats.verified_count = 0) AS pending_count
+                 FROM (
+                    SELECT
+                        r.id,
+                        COUNT(p.id) AS passenger_count,
+                        COUNT(*) FILTER (WHERE p.verified = TRUE) AS verified_count
+                    FROM registrations r
+                    LEFT JOIN passengers p ON p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
+                    WHERE COALESCE(r.active, TRUE) = TRUE
+                    GROUP BY r.id
+                 ) stats`
+            ),
+            pool.query(
+                `SELECT
+                    COALESCE(NULLIF(trim(verified_by), ''), 'Unknown') AS verifier_name,
+                    COUNT(*)::int AS total_actions,
+                    MAX(verified_at) AS last_action_at
+                 FROM passengers
+                 WHERE COALESCE(active, TRUE) = TRUE
+                   AND verified = TRUE
+                 GROUP BY COALESCE(NULLIF(trim(verified_by), ''), 'Unknown')
+                 ORDER BY total_actions DESC, last_action_at DESC
+                 LIMIT 5`
+            ),
+            pool.query(
+                `SELECT * FROM (
+                    SELECT
+                        pv.id,
+                        pv.action,
+                        pv.verified_at,
+                        pv.verified_by,
+                        pv.source,
+                        pv.notes,
+                        p.nama AS passenger_name,
+                        p.registration_id
+                    FROM passenger_verifications pv
+                    JOIN passengers p ON p.id = pv.passenger_id
+                    WHERE COALESCE(p.active, TRUE) = TRUE
+
+                    UNION ALL
+
+                    SELECT
+                        (-p.id) AS id,
+                        'verify' AS action,
+                        p.verified_at,
+                        COALESCE(NULLIF(p.verified_by, ''), 'Unknown') AS verified_by,
+                        'legacy-state' AS source,
+                        NULL AS notes,
+                        p.nama AS passenger_name,
+                        p.registration_id
+                    FROM passengers p
+                    WHERE COALESCE(p.active, TRUE) = TRUE
+                      AND p.verified = TRUE
+                      AND p.verified_at IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM passenger_verifications pv
+                          WHERE pv.passenger_id = p.id
+                            AND pv.action = 'verify'
+                      )
+                 ) activity
+                 ORDER BY verified_at DESC, id DESC
+                 LIMIT 12`
+            ),
+            pool.query(
+                `WITH hours AS (
+                    SELECT generate_series(date_trunc('hour', CURRENT_TIMESTAMP) - interval '11 hour', date_trunc('hour', CURRENT_TIMESTAMP), interval '1 hour') AS hour_bucket
+                 )
+                 SELECT
+                    to_char(hours.hour_bucket, 'HH24:00') AS hour_label,
+                    COALESCE(COUNT(pv.id), 0)::int AS total_actions,
+                    COALESCE(COUNT(*) FILTER (WHERE pv.action = 'verify'), 0)::int AS verify_actions,
+                    COALESCE(COUNT(*) FILTER (WHERE pv.action = 'unverify'), 0)::int AS unverify_actions
+                 FROM hours
+                 LEFT JOIN passenger_verifications pv
+                    ON date_trunc('hour', pv.verified_at) = hours.hour_bucket
+                 LEFT JOIN passengers p
+                    ON p.id = pv.passenger_id
+                    AND COALESCE(p.active, TRUE) = TRUE
+                 WHERE p.id IS NOT NULL OR pv.id IS NULL
+                 GROUP BY hours.hour_bucket
+                 ORDER BY hours.hour_bucket ASC`
+            ),
+        ]);
+
+        const countRow = countResult.rows[0] || {};
+        const breakdownRow = registrationBreakdownResult.rows[0] || {};
+        const registrationsCount = Number(countRow.registrations_count || 0);
+        const passengersCount = Number(countRow.passengers_count || 0);
+        const verifiedCount = Number(countRow.verified_count || 0);
+        const pendingCount = Math.max(0, passengersCount - verifiedCount);
+        const verificationRate = passengersCount > 0 ? Number(((verifiedCount / passengersCount) * 100).toFixed(1)) : 0;
+
+        res.json({
+            summary: {
+                registrationsCount,
+                passengersCount,
+                verifiedCount,
+                pendingCount,
+                verificationRate,
+                fullyVerifiedRegistrations: Number(breakdownRow.fully_verified_count || 0),
+                partialVerifiedRegistrations: Number(breakdownRow.partial_verified_count || 0),
+                pendingRegistrations: Number(breakdownRow.pending_count || 0),
+            },
+            topVerifiers: topVerifiersResult.rows.map((row) => ({
+                name: row.verifier_name,
+                totalActions: Number(row.total_actions || 0),
+                lastActionAt: row.last_action_at,
+            })),
+            recentActivity: recentActivityResult.rows.map((row) => ({
+                id: row.id,
+                action: row.action,
+                verifiedAt: row.verified_at,
+                verifiedBy: row.verified_by,
+                source: row.source,
+                notes: row.notes,
+                passengerName: row.passenger_name,
+                registrationId: row.registration_id,
+            })),
+            hourlyTrend: hourlyTrendResult.rows.map((row) => ({
+                hourLabel: row.hour_label,
+                totalActions: Number(row.total_actions || 0),
+                verifyActions: Number(row.verify_actions || 0),
+                unverifyActions: Number(row.unverify_actions || 0),
+            })),
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // SPA Fallback: Serve index.html for any unknown routes
 // SPA Fallback: Serve index.html for any unknown routes
 app.get(/.*/, (req, res) => {

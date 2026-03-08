@@ -1,6 +1,9 @@
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
 
 // --- Types ---
 interface Passenger {
@@ -22,6 +25,48 @@ interface Registration {
     passengers: Passenger[];
 }
 
+interface AdminSummary {
+    registrationsCount: number;
+    passengersCount: number;
+    verifiedCount: number;
+    pendingCount: number;
+    verificationRate: number;
+    fullyVerifiedRegistrations: number;
+    partialVerifiedRegistrations: number;
+    pendingRegistrations: number;
+}
+
+interface TopVerifier {
+    name: string;
+    totalActions: number;
+    lastActionAt: string | null;
+}
+
+interface RecentActivityItem {
+    id: number;
+    action: 'verify' | 'unverify';
+    verifiedAt: string;
+    verifiedBy: string;
+    source: string;
+    notes?: string | null;
+    passengerName: string;
+    registrationId: string;
+}
+
+interface HourlyTrendPoint {
+    hourLabel: string;
+    totalActions: number;
+    verifyActions: number;
+    unverifyActions: number;
+}
+
+interface AdminSummaryResponse {
+    summary: AdminSummary;
+    topVerifiers: TopVerifier[];
+    recentActivity: RecentActivityItem[];
+    hourlyTrend: HourlyTrendPoint[];
+}
+
 // --- DOM Elements ---
 const dashboardContent = document.getElementById('dashboardContent') as HTMLDivElement;
 const btnBackToHome = document.getElementById('btnBackToHome') as HTMLButtonElement;
@@ -30,6 +75,19 @@ const tableBody = document.getElementById('tableBody') as HTMLTableSectionElemen
 const totalDataCount = document.getElementById('totalDataCount') as HTMLSpanElement;
 const btnDownloadAll = document.getElementById('btnDownloadAll') as HTMLButtonElement;
 const themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
+const summaryRegistrations = document.getElementById('summaryRegistrations') as HTMLDivElement;
+const summaryRegistrationMeta = document.getElementById('summaryRegistrationMeta') as HTMLDivElement;
+const summaryPassengers = document.getElementById('summaryPassengers') as HTMLDivElement;
+const summaryPassengerMeta = document.getElementById('summaryPassengerMeta') as HTMLDivElement;
+const summaryVerified = document.getElementById('summaryVerified') as HTMLDivElement;
+const summaryVerifiedMeta = document.getElementById('summaryVerifiedMeta') as HTMLDivElement;
+const summaryPending = document.getElementById('summaryPending') as HTMLDivElement;
+const summaryPendingMeta = document.getElementById('summaryPendingMeta') as HTMLDivElement;
+const topVerifiersList = document.getElementById('topVerifiersList') as HTMLDivElement;
+const recentActivityList = document.getElementById('recentActivityList') as HTMLDivElement;
+const verificationTrendCanvas = document.getElementById('verificationTrendChart') as HTMLCanvasElement;
+const adminToast = document.getElementById('adminToast') as HTMLDivElement;
+const adminToastMessage = document.getElementById('adminToastMessage') as HTMLSpanElement;
 
 // Search and Pagination Elements
 const searchInput = document.getElementById('searchInput') as HTMLInputElement;
@@ -52,6 +110,9 @@ let filteredData: Registration[] = [];
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
 const ADMIN_PIN_KEY = 'qrscan_admin_pin';
+let adminSummaryData: AdminSummaryResponse | null = null;
+let verificationTrendChart: Chart | null = null;
+let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function getStoredAdminPinHash(): string {
     return localStorage.getItem(ADMIN_PIN_KEY) || '';
@@ -109,17 +170,16 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
         target.verifiedBy = null;
     }
 
-    filteredData = [...registrationsData];
-    renderTable();
+    await loadData();
 }
 
 (window as any).unverifyPassenger = async (passengerId: number, passengerName: string) => {
     try {
         await unverifyPassenger(passengerId, passengerName);
-        window.alert(`Verifikasi ${passengerName} berhasil dibatalkan.`);
+        showAdminToast(`Verifikasi ${passengerName} berhasil dibatalkan.`);
     } catch (error: any) {
         console.error(error);
-        window.alert(`Gagal membatalkan verifikasi: ${error.message}`);
+        showAdminToast(`Gagal membatalkan verifikasi: ${error.message}`);
     }
 };
 
@@ -146,6 +206,146 @@ function toggleTheme() {
 
 themeToggle.addEventListener('click', toggleTheme);
 
+function showAdminToast(message: string) {
+    adminToastMessage.textContent = message;
+    adminToast.classList.add('show');
+    if (adminToastTimeout) {
+        clearTimeout(adminToastTimeout);
+    }
+    adminToastTimeout = setTimeout(() => {
+        adminToast.classList.remove('show');
+    }, 2800);
+}
+
+function formatDateTime(value: string | null | undefined): string {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return new Intl.DateTimeFormat('id-ID', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(date);
+}
+
+function applySearchFilter() {
+    const query = searchInput.value.toLowerCase().trim();
+
+    if (!query) {
+        filteredData = [...registrationsData];
+        return;
+    }
+
+    filteredData = registrationsData.filter((reg) => {
+        const matchId = reg.id.toLowerCase().includes(query);
+        const matchPhone = reg.phone && reg.phone.includes(query);
+        const matchPassenger = reg.passengers.some((p) => p.nama.toLowerCase().includes(query) || (p.nik && p.nik.includes(query)) || (p.verifiedBy && p.verifiedBy.toLowerCase().includes(query)));
+        return matchId || matchPhone || matchPassenger;
+    });
+}
+
+function renderTrendChart(points: HourlyTrendPoint[]) {
+    if (verificationTrendChart) {
+        verificationTrendChart.destroy();
+    }
+
+    verificationTrendChart = new Chart(verificationTrendCanvas, {
+        type: 'bar',
+        data: {
+            labels: points.map((point) => point.hourLabel),
+            datasets: [
+                {
+                    type: 'line',
+                    label: 'Verify',
+                    data: points.map((point) => point.verifyActions),
+                    borderColor: '#4ade80',
+                    backgroundColor: 'rgba(74, 222, 128, 0.18)',
+                    tension: 0.32,
+                    fill: true,
+                    borderWidth: 3,
+                },
+                {
+                    type: 'bar',
+                    label: 'Batalkan',
+                    data: points.map((point) => point.unverifyActions),
+                    backgroundColor: 'rgba(248, 113, 113, 0.72)',
+                    borderRadius: 8,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#cbd5e1',
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: '#94a3b8', precision: 0 },
+                    grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                },
+            },
+        },
+    });
+}
+
+function renderSummary() {
+    if (!adminSummaryData) {
+        return;
+    }
+
+    const { summary, topVerifiers, recentActivity, hourlyTrend } = adminSummaryData;
+    summaryRegistrations.textContent = summary.registrationsCount.toString();
+    summaryRegistrationMeta.textContent = `${summary.fullyVerifiedRegistrations} rombongan sudah lengkap, ${summary.pendingRegistrations} masih belum ada verifikasi`;
+    summaryPassengers.textContent = summary.passengersCount.toString();
+    summaryPassengerMeta.textContent = `${summary.partialVerifiedRegistrations} rombongan masih parsial`;
+    summaryVerified.textContent = summary.verifiedCount.toString();
+    summaryVerifiedMeta.textContent = `${summary.verificationRate}% dari total penumpang aktif`;
+    summaryPending.textContent = summary.pendingCount.toString();
+    summaryPendingMeta.textContent = summary.pendingCount === 0 ? 'Semua penumpang aktif sudah terverifikasi' : 'Masih perlu tindak lanjut operator';
+
+    if (topVerifiers.length === 0) {
+        topVerifiersList.innerHTML = '<div class="empty-mini-state">Belum ada aktivitas verifikasi.</div>';
+    } else {
+        topVerifiersList.innerHTML = topVerifiers.map((item) => `
+            <div class="leaderboard-item">
+                <div class="leaderboard-top">
+                    <div class="leaderboard-name">${item.name}</div>
+                    <div class="leaderboard-count">${item.totalActions}</div>
+                </div>
+                <div class="leaderboard-meta">Aksi verifikasi terakhir: ${formatDateTime(item.lastActionAt)}</div>
+            </div>
+        `).join('');
+    }
+
+    if (recentActivity.length === 0) {
+        recentActivityList.innerHTML = '<div class="empty-mini-state">Belum ada aktivitas untuk ditampilkan.</div>';
+    } else {
+        recentActivityList.innerHTML = recentActivity.map((item) => `
+            <div class="activity-item">
+                <div class="leaderboard-top">
+                    <span class="activity-badge ${item.action}">${item.action === 'verify' ? 'Verify' : 'Batalkan'}</span>
+                    <span class="activity-meta">${formatDateTime(item.verifiedAt)}</span>
+                </div>
+                <div class="activity-title">${item.passengerName} - ${item.registrationId}</div>
+                <div class="activity-meta">Oleh ${item.verifiedBy} via ${item.source}</div>
+                ${item.notes ? `<div class="activity-notes">Catatan: ${item.notes}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    renderTrendChart(hourlyTrend);
+}
+
 // Check secure session access set by main app
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
@@ -161,10 +361,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadData() {
     try {
-        const response = await fetch('/api/registrations');
-        if (!response.ok) throw new Error('Failed to fetch data');
+        const [registrationsResponse, summaryResponse] = await Promise.all([
+            fetch('/api/registrations'),
+            fetch('/api/admin-summary'),
+        ]);
 
-        const rawData: Registration[] = await response.json();
+        if (!registrationsResponse.ok) throw new Error('Failed to fetch registrations');
+        if (!summaryResponse.ok) throw new Error('Failed to fetch admin summary');
+
+        const rawData: Registration[] = await registrationsResponse.json();
+        adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
 
         // Filter: Hanya pendaftar yang memiliki nomor WA/HP yang valid
         registrationsData = rawData.filter(reg => reg.phone && reg.phone.trim().length > 5);
@@ -177,9 +383,10 @@ async function loadData() {
             return reg;
         });
 
-        filteredData = [...registrationsData];
+        applySearchFilter();
 
         renderTable();
+        renderSummary();
 
         totalDataCount.textContent = registrationsData.length.toString();
         if (registrationsData.length > 0) {
@@ -188,6 +395,7 @@ async function loadData() {
 
     } catch (err: any) {
         console.error(err);
+        showAdminToast(`Gagal memuat dashboard: ${err.message}`);
         tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-msg); padding: 32px;">Gagal memuat data: ${err.message}</td></tr>`;
     }
 }
@@ -195,20 +403,9 @@ async function loadData() {
 // --- Search and Pagination Logic ---
 
 searchInput.addEventListener('input', (e) => {
-    const query = (e.target as HTMLInputElement).value.toLowerCase().trim();
+    void e;
     currentPage = 1; // Reset to page 1 on search
-
-    if (!query) {
-        filteredData = [...registrationsData];
-    } else {
-        filteredData = registrationsData.filter(reg => {
-            const matchId = reg.id.toLowerCase().includes(query);
-            const matchPhone = reg.phone && reg.phone.includes(query);
-            const matchPassenger = reg.passengers.some(p => p.nama.toLowerCase().includes(query) || (p.nik && p.nik.includes(query)));
-            return matchId || matchPhone || matchPassenger;
-        });
-    }
-
+    applySearchFilter();
     renderTable();
 });
 
@@ -338,14 +535,21 @@ async function renderTable() {
             const unverifyAction = p.verified
                 ? `<button class="pill-ktp-link" style="border:none;background:none;padding:0;cursor:pointer;" onclick='unverifyPassenger(${p.id}, ${JSON.stringify(p.nama)})'>↩ Batalkan</button>`
                 : '';
+            const verificationMeta = p.verified
+                ? `<div class="activity-meta" style="margin-top:6px;">Diverifikasi ${p.verifiedBy || 'Unknown'} • ${formatDateTime(p.verifiedAt)}</div>`
+                : '<div class="activity-meta" style="margin-top:6px;">Belum diverifikasi</div>';
+            const statusBadge = p.verified
+                ? '<span class="status-badge status-verified">Verified</span>'
+                : '<span class="status-badge status-pending">Pending</span>';
 
             passHtml += `
                 <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
                     <div class="pill-header">
                         <strong class="pill-name">${p.nama} ${isRegBadge}</strong>
-                        ${statusIcon}
+                        <span style="display:flex;align-items:center;gap:8px;">${statusBadge}${statusIcon}</span>
                     </div>
                     ${(nikLabel || ktpLink || unverifyAction) ? `<div class="pill-footer">${nikLabel} ${ktpLink} ${unverifyAction}</div>` : ''}
+                    ${verificationMeta}
                 </div>
             `;
         });

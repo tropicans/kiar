@@ -77,6 +77,177 @@
             box-shadow: none;
         }
 
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .summary-card {
+            padding: 18px;
+            border-radius: 18px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.04);
+            box-shadow: var(--shadow-glass);
+        }
+
+        .summary-label {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 10px;
+        }
+
+        .summary-value {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .summary-meta {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .summary-panels {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(320px, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .summary-panel {
+            padding: 20px;
+            border-radius: 20px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .panel-subtitle {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .chart-wrap {
+            position: relative;
+            min-height: 300px;
+        }
+
+        .summary-side-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .leaderboard-list,
+        .activity-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .leaderboard-item,
+        .activity-item {
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .leaderboard-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+
+        .leaderboard-name,
+        .activity-title {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .leaderboard-count {
+            color: var(--accent-green);
+            font-weight: 800;
+        }
+
+        .leaderboard-meta,
+        .activity-meta,
+        .activity-notes {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .activity-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .activity-badge.verify {
+            color: #052e16;
+            background: rgba(74, 222, 128, 0.9);
+        }
+
+        .activity-badge.unverify {
+            color: #7f1d1d;
+            background: rgba(248, 113, 113, 0.88);
+        }
+
+        .empty-mini-state {
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px dashed var(--border-glass);
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .admin-toast {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 10000;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            min-width: 240px;
+            max-width: 420px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--border-glass);
+            background: rgba(9, 9, 11, 0.92);
+            color: var(--text-primary);
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .admin-toast.show {
+            display: flex;
+        }
+
         .btn-secondary-admin {
             background: transparent;
             color: var(--text-primary);
@@ -244,6 +415,11 @@
                 justify-content: center;
             }
 
+            .summary-grid,
+            .summary-panels {
+                grid-template-columns: 1fr;
+            }
+
             .header-title {
                 font-size: 20px;
             }
@@ -257,6 +433,14 @@
             .qr-canvas {
                 width: 60px;
                 height: 60px;
+            }
+
+            .admin-toast {
+                left: 12px;
+                right: 12px;
+                bottom: 12px;
+                min-width: 0;
+                max-width: none;
             }
         }
     </style>
@@ -319,9 +503,72 @@
             style="max-width: 1200px; width: 100%; min-width: 0; padding: 0 16px; box-sizing: border-box;">
             <!-- Main Dashboard -->
             <div class="dashboard-container" id="dashboardContent">
+                <section class="summary-grid" id="summaryGrid">
+                    <article class="summary-card">
+                        <div class="summary-label">Total Rombongan</div>
+                        <div class="summary-value" id="summaryRegistrations">0</div>
+                        <div class="summary-meta" id="summaryRegistrationMeta">Memuat data...</div>
+                    </article>
+                    <article class="summary-card">
+                        <div class="summary-label">Total Penumpang</div>
+                        <div class="summary-value" id="summaryPassengers">0</div>
+                        <div class="summary-meta" id="summaryPassengerMeta">Memuat data...</div>
+                    </article>
+                    <article class="summary-card">
+                        <div class="summary-label">Sudah Verifikasi</div>
+                        <div class="summary-value" id="summaryVerified">0</div>
+                        <div class="summary-meta" id="summaryVerifiedMeta">Memuat data...</div>
+                    </article>
+                    <article class="summary-card">
+                        <div class="summary-label">Belum Verifikasi</div>
+                        <div class="summary-value" id="summaryPending">0</div>
+                        <div class="summary-meta" id="summaryPendingMeta">Memuat data...</div>
+                    </article>
+                </section>
+
+                <section class="summary-panels">
+                    <article class="summary-panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">Tren Verifikasi</div>
+                                <div class="panel-subtitle">Aktivitas verify dan batalkan dalam 12 jam terakhir</div>
+                            </div>
+                        </div>
+                        <div class="chart-wrap">
+                            <canvas id="verificationTrendChart"></canvas>
+                        </div>
+                    </article>
+
+                    <div class="summary-side-grid">
+                        <article class="summary-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">Top Petugas</div>
+                                    <div class="panel-subtitle">Peringkat operator berdasarkan jumlah verifikasi</div>
+                                </div>
+                            </div>
+                            <div class="leaderboard-list" id="topVerifiersList">
+                                <div class="empty-mini-state">Belum ada aktivitas verifikasi.</div>
+                            </div>
+                        </article>
+
+                        <article class="summary-panel">
+                            <div class="panel-header">
+                                <div>
+                                    <div class="panel-title">Aktivitas Terakhir</div>
+                                    <div class="panel-subtitle">Riwayat verify dan batalkan terbaru</div>
+                                </div>
+                            </div>
+                            <div class="activity-list" id="recentActivityList">
+                                <div class="empty-mini-state">Belum ada aktivitas untuk ditampilkan.</div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
                 <div class="header-actions">
                     <div style="flex: 1; min-width: 250px;">
-                        <h1 class="header-title">Data Pendaftar Mudik & QR Code</h1>
+                        <h1 class="header-title">Dashboard Verifikasi Peserta</h1>
                         <p
                             style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
                             Total Data: <span id="totalDataCount">0</span> Rombongan
@@ -359,7 +606,7 @@
                                 <polyline points="7 10 12 15 17 10"></polyline>
                                 <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
-                            <span class="btn-text">Download Semua QR</span>
+                            <span class="btn-text">Download Semua Kode</span>
                         </button>
                     </div>
                 </div>
@@ -370,7 +617,7 @@
                             style="position: sticky; top: 0; z-index: 10; background: var(--bg-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
                             <tr>
                                 <th style="width: 50px;">No</th>
-                                <th style="width: 100px;">QR Code</th>
+                                <th style="width: 100px;">Kode</th>
                                 <th style="width: 140px;">ID Pendaftar</th>
                                 <th style="width: 140px;">No WhatsApp</th>
                                 <th>Daftar Penumpang</th>
@@ -430,6 +677,10 @@
 
     <!-- Hidden canvas template for generating high-res QR codes for download -->
     <canvas id="qrTemplateCanvas" style="display: none;"></canvas>
+
+    <div class="admin-toast" id="adminToast">
+        <span id="adminToastMessage"></span>
+    </div>
 
     <script type="module" src="/src/admin.ts"></script>
 </body>
