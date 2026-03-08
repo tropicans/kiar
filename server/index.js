@@ -39,6 +39,15 @@ function normalizeNameQuery(rawValue) {
         .trim();
 }
 
+function normalizeAdminText(rawValue) {
+    return String(rawValue || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeAdminNik(rawValue) {
+    const digits = String(rawValue || '').replace(/\D/g, '');
+    return digits || null;
+}
+
 function mapPassengerRow(passenger) {
     return {
         id: passenger.id,
@@ -278,8 +287,12 @@ app.get('/api/search-name', async (req, res) => {
 // API: Get All Registrations (for Admin Dashboard)
 app.get('/api/registrations', async (req, res) => {
     try {
+        const includeInactive = String(req.query.includeInactive || '') === '1';
+        const registrationWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
+        const passengerWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
+
         // Fetch all registrations
-        const regResult = await pool.query('SELECT * FROM registrations WHERE COALESCE(active, TRUE) = TRUE ORDER BY id ASC');
+        const regResult = await pool.query(`SELECT * FROM registrations ${registrationWhere} ORDER BY id ASC`);
         if (regResult.rows.length === 0) {
             return res.json([]);
         }
@@ -287,7 +300,7 @@ app.get('/api/registrations', async (req, res) => {
         const registrations = regResult.rows;
 
         // Fetch all passengers
-        const passResult = await pool.query('SELECT * FROM passengers WHERE COALESCE(active, TRUE) = TRUE ORDER BY registration_id ASC, id ASC');
+        const passResult = await pool.query(`SELECT * FROM passengers ${passengerWhere} ORDER BY registration_id ASC, id ASC`);
         const passengers = passResult.rows;
 
         // Group passengers by registration_id
@@ -295,8 +308,10 @@ app.get('/api/registrations', async (req, res) => {
             return {
                 id: reg.id,
                 phone: reg.phone,
+                phoneRaw: reg.phone_raw,
                 ktpUrl: reg.ktp_url,
                 idCardUrl: reg.id_card_url,
+                active: reg.active,
                 passengers: passengers
                     .filter(p => p.registration_id === reg.id)
                     .map(p => ({
@@ -307,7 +322,8 @@ app.get('/api/registrations', async (req, res) => {
                         ktpUrl: p.ktp_url,
                         verified: p.verified,
                         verifiedAt: p.verified_at,
-                        verifiedBy: p.verified_by
+                        verifiedBy: p.verified_by,
+                        active: p.active,
                     }))
             };
         });
@@ -418,6 +434,134 @@ app.post('/api/verify-passengers', async (req, res) => {
         } finally {
             client.release();
         }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.patch('/api/admin/registrations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { phone, active } = req.body || {};
+        const updates = [];
+        const values = [];
+
+        if (phone !== undefined) {
+            const normalizedPhone = normalizeAdminText(phone);
+            updates.push(`phone = $${values.length + 1}`);
+            values.push(normalizedPhone || null);
+            updates.push(`phone_raw = $${values.length + 1}`);
+            values.push(normalizedPhone || null);
+        }
+
+        if (active !== undefined) {
+            if (typeof active !== 'boolean') {
+                return res.status(400).json({ error: 'Nilai active harus boolean' });
+            }
+            updates.push(`active = $${values.length + 1}`);
+            values.push(active);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'Tidak ada perubahan yang dikirim' });
+        }
+
+        values.push(id);
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const registrationRes = await client.query(
+                `UPDATE registrations
+                 SET ${updates.join(', ')}
+                 WHERE id = $${values.length}
+                 RETURNING *`,
+                values,
+            );
+
+            if (registrationRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Rombongan tidak ditemukan' });
+            }
+
+            if (typeof active === 'boolean') {
+                await client.query(
+                    'UPDATE passengers SET active = $1 WHERE registration_id = $2',
+                    [active, id],
+                );
+            }
+
+            await client.query('COMMIT');
+            return res.json({ success: true, registration: registrationRes.rows[0] });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.patch('/api/admin/passengers/:id', async (req, res) => {
+    try {
+        const passengerId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(passengerId)) {
+            return res.status(400).json({ error: 'ID penumpang tidak valid' });
+        }
+
+        const { nama, nik, active } = req.body || {};
+        const updates = [];
+        const values = [];
+
+        if (nama !== undefined) {
+            const normalizedName = normalizeAdminText(nama);
+            if (!normalizedName) {
+                return res.status(400).json({ error: 'Nama penumpang wajib diisi' });
+            }
+            updates.push(`nama = $${values.length + 1}`);
+            values.push(normalizedName);
+            updates.push(`nama_raw = $${values.length + 1}`);
+            values.push(normalizedName);
+            updates.push(`nama_normalized = $${values.length + 1}`);
+            values.push(normalizeNameQuery(normalizedName));
+        }
+
+        if (nik !== undefined) {
+            updates.push(`nik = $${values.length + 1}`);
+            values.push(normalizeAdminNik(nik));
+        }
+
+        if (active !== undefined) {
+            if (typeof active !== 'boolean') {
+                return res.status(400).json({ error: 'Nilai active harus boolean' });
+            }
+            updates.push(`active = $${values.length + 1}`);
+            values.push(active);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'Tidak ada perubahan yang dikirim' });
+        }
+
+        values.push(passengerId);
+
+        const result = await pool.query(
+            `UPDATE passengers
+             SET ${updates.join(', ')}
+             WHERE id = $${values.length}
+             RETURNING *`,
+            values,
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Penumpang tidak ditemukan' });
+        }
+
+        res.json({ success: true, passenger: result.rows[0] });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });

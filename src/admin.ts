@@ -12,14 +12,17 @@ interface Passenger {
     verified: boolean;
     verifiedAt: string | null;
     verifiedBy: string | null;
+    active: boolean;
 }
 
 interface Registration {
     id: string;
     phone: string;
+    phoneRaw?: string;
     ktpUrl: string;
     idCardUrl?: string;
     passengers: Passenger[];
+    active: boolean;
 }
 
 interface AdminSummary {
@@ -214,6 +217,94 @@ async function unverifyRegistration(registrationId: string) {
     await loadData();
 }
 
+async function updateRegistration(registrationId: string, payload: { phone?: string | null; active?: boolean }) {
+    const response = await fetch(`/api/admin/registrations/${encodeURIComponent(registrationId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+    }
+
+    await loadData();
+}
+
+async function updatePassenger(passengerId: number, payload: { nama?: string; nik?: string | null; active?: boolean }) {
+    const response = await fetch(`/api/admin/passengers/${passengerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+    }
+
+    await loadData();
+}
+
+async function editRegistrationPhone(registrationId: string) {
+    const registration = registrationsData.find((item) => item.id === registrationId);
+    if (!registration) {
+        throw new Error('Rombongan tidak ditemukan');
+    }
+
+    const approved = await requestAdminPinApproval(`mengubah nomor WA rombongan ${registrationId}`);
+    if (!approved) return;
+
+    const nextPhone = window.prompt(`Nomor WA untuk ${registrationId}:`, registration.phone || registration.phoneRaw || '');
+    if (nextPhone === null) return;
+
+    await updateRegistration(registrationId, { phone: nextPhone });
+}
+
+async function toggleRegistrationActive(registrationId: string) {
+    const registration = registrationsData.find((item) => item.id === registrationId);
+    if (!registration) {
+        throw new Error('Rombongan tidak ditemukan');
+    }
+
+    const nextActive = !registration.active;
+    const approved = await requestAdminPinApproval(`${nextActive ? 'mengaktifkan' : 'menonaktifkan'} rombongan ${registrationId}`);
+    if (!approved) return;
+
+    await updateRegistration(registrationId, { active: nextActive });
+}
+
+async function editPassenger(passengerId: number) {
+    const passenger = registrationsData.flatMap((registration) => registration.passengers).find((item) => item.id === passengerId);
+    if (!passenger) {
+        throw new Error('Penumpang tidak ditemukan');
+    }
+
+    const approved = await requestAdminPinApproval(`mengubah data penumpang ${passenger.nama}`);
+    if (!approved) return;
+
+    const nextName = window.prompt('Nama penumpang:', passenger.nama);
+    if (nextName === null) return;
+    const nextNik = window.prompt('NIK penumpang (boleh kosong):', passenger.nik || '');
+    if (nextNik === null) return;
+
+    await updatePassenger(passengerId, { nama: nextName, nik: nextNik });
+}
+
+async function togglePassengerActive(passengerId: number) {
+    const passenger = registrationsData.flatMap((registration) => registration.passengers).find((item) => item.id === passengerId);
+    if (!passenger) {
+        throw new Error('Penumpang tidak ditemukan');
+    }
+
+    const nextActive = !passenger.active;
+    const approved = await requestAdminPinApproval(`${nextActive ? 'mengaktifkan' : 'menonaktifkan'} penumpang ${passenger.nama}`);
+    if (!approved) return;
+
+    await updatePassenger(passengerId, { active: nextActive });
+}
+
 (window as any).unverifyPassenger = async (passengerId: number, passengerName: string) => {
     try {
         await unverifyPassenger(passengerId, passengerName);
@@ -231,6 +322,46 @@ async function unverifyRegistration(registrationId: string) {
     } catch (error: any) {
         console.error(error);
         showAdminToast(`Gagal membatalkan verifikasi rombongan: ${error.message}`);
+    }
+};
+
+(window as any).editRegistrationPhone = async (registrationId: string) => {
+    try {
+        await editRegistrationPhone(registrationId);
+        showAdminToast(`Nomor WA rombongan ${registrationId} berhasil diperbarui.`);
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Gagal mengubah nomor WA: ${error.message}`);
+    }
+};
+
+(window as any).toggleRegistrationActive = async (registrationId: string) => {
+    try {
+        await toggleRegistrationActive(registrationId);
+        showAdminToast(`Status rombongan ${registrationId} berhasil diperbarui.`);
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Gagal mengubah status rombongan: ${error.message}`);
+    }
+};
+
+(window as any).editPassenger = async (passengerId: number) => {
+    try {
+        await editPassenger(passengerId);
+        showAdminToast('Data penumpang berhasil diperbarui.');
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Gagal mengubah data penumpang: ${error.message}`);
+    }
+};
+
+(window as any).togglePassengerActive = async (passengerId: number) => {
+    try {
+        await togglePassengerActive(passengerId);
+        showAdminToast('Status penumpang berhasil diperbarui.');
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Gagal mengubah status penumpang: ${error.message}`);
     }
 };
 
@@ -289,8 +420,14 @@ function applySearchFilter() {
     filteredData = registrationsData.filter((reg) => {
         const matchId = reg.id.toLowerCase().includes(query);
         const matchPhone = reg.phone && reg.phone.includes(query);
-        const matchPassenger = reg.passengers.some((p) => p.nama.toLowerCase().includes(query) || (p.nik && p.nik.includes(query)) || (p.verifiedBy && p.verifiedBy.toLowerCase().includes(query)));
-        return matchId || matchPhone || matchPassenger;
+        const matchRegistrationState = reg.active
+            ? ('aktif'.includes(query) || 'active'.includes(query))
+            : ('nonaktif'.includes(query) || 'inactive'.includes(query));
+        const matchPassenger = reg.passengers.some((p) => p.nama.toLowerCase().includes(query)
+            || (p.nik && p.nik.includes(query))
+            || (p.verifiedBy && p.verifiedBy.toLowerCase().includes(query))
+            || (p.active ? ('aktif'.includes(query) || 'active'.includes(query)) : ('nonaktif'.includes(query) || 'inactive'.includes(query))));
+        return matchId || matchPhone || matchRegistrationState || matchPassenger;
     });
 }
 
@@ -413,7 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadData() {
     try {
         const [registrationsResponse, summaryResponse] = await Promise.all([
-            fetch('/api/registrations'),
+            fetch('/api/registrations?includeInactive=1'),
             fetch('/api/admin-summary'),
         ]);
 
@@ -423,8 +560,7 @@ async function loadData() {
         const rawData: Registration[] = await registrationsResponse.json();
         adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
 
-        // Filter: Hanya pendaftar yang memiliki nomor WA/HP yang valid
-        registrationsData = rawData.filter(reg => reg.phone && reg.phone.trim().length > 5);
+        registrationsData = rawData;
 
         // Clean up No WhatsApp field (take only the first number if " DAN " is present)
         registrationsData = registrationsData.map(reg => {
@@ -572,6 +708,7 @@ async function renderTable() {
         reg.passengers.forEach(p => {
             const isRegClass = p.isRegistrant ? 'passenger-pill-utama' : '';
             const isVerifiedClass = p.verified ? 'passenger-pill-verified' : '';
+            const inactiveStyle = p.active ? '' : 'opacity:0.6;';
             const statusIcon = p.verified
                 ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>'
                 : '';
@@ -583,20 +720,25 @@ async function renderTable() {
             const unverifyAction = p.verified
                 ? `<button class="pill-ktp-link" style="border:none;background:none;padding:0;cursor:pointer;" onclick='unverifyPassenger(${p.id}, ${JSON.stringify(p.nama)})'>↩ Batalkan</button>`
                 : '';
+            const editAction = `<button class="pill-ktp-link" style="border:none;background:none;padding:0;cursor:pointer;" onclick="editPassenger(${p.id})">✎ Edit</button>`;
+            const toggleAction = `<button class="pill-ktp-link" style="border:none;background:none;padding:0;cursor:pointer;${p.active ? '' : 'color:#fda4af;'}" onclick="togglePassengerActive(${p.id})">${p.active ? 'Nonaktifkan' : 'Aktifkan'}</button>`;
             const verificationMeta = p.verified
                 ? `<div class="activity-meta" style="margin-top:6px;">Diverifikasi ${p.verifiedBy || 'Unknown'} • ${formatDateTime(p.verifiedAt)}</div>`
                 : '<div class="activity-meta" style="margin-top:6px;">Belum diverifikasi</div>';
             const statusBadge = p.verified
                 ? '<span class="status-badge status-verified">Verified</span>'
                 : '<span class="status-badge status-pending">Pending</span>';
+            const activeBadge = p.active
+                ? '<span class="status-badge status-verified">Aktif</span>'
+                : '<span class="status-badge" style="background:rgba(248,113,113,.16);color:#fecaca;">Nonaktif</span>';
 
             passHtml += `
-                <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
+                <div class="passenger-pill ${isRegClass} ${isVerifiedClass}" style="${inactiveStyle}">
                     <div class="pill-header">
                         <strong class="pill-name">${p.nama} ${isRegBadge}</strong>
-                        <span style="display:flex;align-items:center;gap:8px;">${statusBadge}${statusIcon}</span>
+                        <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">${activeBadge}${statusBadge}${statusIcon}</span>
                     </div>
-                    ${(nikLabel || ktpLink || unverifyAction) ? `<div class="pill-footer">${nikLabel} ${ktpLink} ${unverifyAction}</div>` : ''}
+                    ${(nikLabel || ktpLink || editAction || toggleAction || unverifyAction) ? `<div class="pill-footer">${nikLabel} ${ktpLink} ${editAction} ${toggleAction} ${unverifyAction}</div>` : ''}
                     ${verificationMeta}
                 </div>
             `;
@@ -609,10 +751,14 @@ async function renderTable() {
         // Check ID Card
         const idCardLink = reg.idCardUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${reg.idCardUrl}')" style="color: var(--accent-blue); text-decoration: none; font-size: 13px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg> Lihat ID Card</a>` : '';
 
+        const registrationStateBadge = reg.active
+            ? '<span class="status-badge status-verified">Aktif</span>'
+            : '<span class="status-badge" style="background:rgba(248,113,113,.16);color:#fecaca;">Nonaktif</span>';
+
         tr.innerHTML = `
             <td>${actualIndex}</td>
             <td>
-                <strong style="font-size: 15px;">${reg.id}</strong><br>
+                <strong style="font-size: 15px;">${reg.id}</strong> ${registrationStateBadge}<br>
                 ${ktpLink}
                 ${idCardLink ? `<div>${idCardLink}</div>` : ''}
             </td>
@@ -620,6 +766,8 @@ async function renderTable() {
             <td>${passHtml}</td>
             <td style="text-align: center;">
                 <div style="display:flex;flex-direction:column;gap:8px;align-items:center;">
+                    <button class="btn-secondary-admin" onclick="editRegistrationPhone('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center;">✎ Edit WA</button>
+                    <button class="btn-secondary-admin" onclick="toggleRegistrationActive('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; ${reg.active ? '' : 'border-color: rgba(74,222,128,.35); color:#bbf7d0;'}">${reg.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
                     ${reg.passengers.some((passenger) => passenger.verified)
                         ? `<button class="btn-secondary-admin" onclick="unverifyRegistration('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">↩ Batalkan Semua</button>`
                         : '<span class="activity-meta">Belum ada aksi admin</span>'}
