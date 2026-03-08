@@ -51,6 +51,77 @@ let registrationsData: Registration[] = [];
 let filteredData: Registration[] = [];
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
+const ADMIN_PIN_KEY = 'qrscan_admin_pin';
+
+function getStoredAdminPinHash(): string {
+    return localStorage.getItem(ADMIN_PIN_KEY) || '';
+}
+
+async function hashPin(pin: string): Promise<string> {
+    const data = new TextEncoder().encode(pin);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyAdminPin(enteredPin: string): Promise<boolean> {
+    const storedHash = getStoredAdminPinHash();
+    if (!storedHash) return false;
+    const enteredHash = await hashPin(enteredPin);
+    return enteredHash === storedHash;
+}
+
+async function unverifyPassenger(passengerId: number, passengerName: string) {
+    const storedAdminPinHash = getStoredAdminPinHash();
+    if (!storedAdminPinHash) {
+        throw new Error('Admin PIN belum diatur. Silakan set dulu dari halaman scanner.');
+    }
+
+    const enteredPin = window.prompt(`Masukkan Admin PIN untuk membatalkan verifikasi ${passengerName}:`, '');
+    if (enteredPin === null) return;
+
+    const isValidPin = await verifyAdminPin(enteredPin.trim());
+    if (!isValidPin) {
+        throw new Error('Admin PIN salah');
+    }
+
+    const reason = window.prompt(`Alasan membatalkan verifikasi untuk ${passengerName}:`, 'Salah pilih operator');
+    if (reason === null) return;
+
+    const response = await fetch('/api/unverify-passengers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            passengerIds: [passengerId],
+            verifiedBy: 'Admin Dashboard',
+            reason,
+        }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+    }
+
+    const target = registrationsData.flatMap((registration) => registration.passengers).find((passenger) => passenger.id === passengerId);
+    if (target) {
+        target.verified = false;
+        target.verifiedAt = null;
+        target.verifiedBy = null;
+    }
+
+    filteredData = [...registrationsData];
+    renderTable();
+}
+
+(window as any).unverifyPassenger = async (passengerId: number, passengerName: string) => {
+    try {
+        await unverifyPassenger(passengerId, passengerName);
+        window.alert(`Verifikasi ${passengerName} berhasil dibatalkan.`);
+    } catch (error: any) {
+        console.error(error);
+        window.alert(`Gagal membatalkan verifikasi: ${error.message}`);
+    }
+};
 
 btnBackToHome.addEventListener('click', () => {
     window.location.href = '/';
@@ -264,6 +335,9 @@ async function renderTable() {
 
             const nikLabel = p.nik ? `<span class="pill-meta">${p.nik}</span>` : '';
             const ktpLink = p.ktpUrl ? `<a href="javascript:void(0)" onclick="openKtpModal('${p.ktpUrl}')" class="pill-ktp-link">📄 Lihat KTP</a>` : '';
+            const unverifyAction = p.verified
+                ? `<button class="pill-ktp-link" style="border:none;background:none;padding:0;cursor:pointer;" onclick='unverifyPassenger(${p.id}, ${JSON.stringify(p.nama)})'>↩ Batalkan</button>`
+                : '';
 
             passHtml += `
                 <div class="passenger-pill ${isRegClass} ${isVerifiedClass}">
@@ -271,7 +345,7 @@ async function renderTable() {
                         <strong class="pill-name">${p.nama} ${isRegBadge}</strong>
                         ${statusIcon}
                     </div>
-                    ${(nikLabel || ktpLink) ? `<div class="pill-footer">${nikLabel} ${ktpLink}</div>` : ''}
+                    ${(nikLabel || ktpLink || unverifyAction) ? `<div class="pill-footer">${nikLabel} ${ktpLink} ${unverifyAction}</div>` : ''}
                 </div>
             `;
         });

@@ -20,8 +20,13 @@ CREATE TABLE IF NOT EXISTS passenger_verifications (
     verified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     verified_by VARCHAR(100) NOT NULL DEFAULT 'Unknown',
     source VARCHAR(20) NOT NULL DEFAULT 'scanner',
+    action VARCHAR(20) NOT NULL DEFAULT 'verify',
+    notes TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify';
+ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT;
 
 CREATE INDEX IF NOT EXISTS passenger_verifications_passenger_idx
 ON passenger_verifications (passenger_id, verified_at DESC, id DESC);
@@ -65,11 +70,12 @@ SET nama_raw = COALESCE(nama_raw, nama),
 WHERE nama IS NOT NULL;
 
 -- Backfill verification events from legacy columns (idempotent by natural key).
-INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source)
+INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source, action)
 SELECT p.id,
        COALESCE(p.verified_at, p.created_at, CURRENT_TIMESTAMP),
        COALESCE(NULLIF(p.verified_by, ''), 'Unknown'),
-       'import'
+       'import',
+       'verify'
 FROM passengers p
 WHERE p.verified = TRUE
   AND NOT EXISTS (

@@ -3,6 +3,7 @@ import {
   lookupById,
   searchPassengersByName,
   searchPassengersByNikSuffix,
+  unverifyPassengers,
   verifyPassengers,
   isConfigured,
   type PassengerData,
@@ -45,6 +46,12 @@ let currentStaffName = '';
 let selectedByNamePassengerId: number | null = null;
 let groupVerifyOnConfirm: (() => void) | null = null;
 let groupVerifyOnCancel: (() => void) | null = null;
+let lastUndoToken = 0;
+let lastVerificationContext: {
+  passengerIds: number[];
+  expiresAt: number;
+  label: string;
+} | null = null;
 
 // Rate limiter state
 let loginFailedAttempts = 0;
@@ -132,6 +139,9 @@ const statusBadge = document.getElementById('statusBadge') as HTMLSpanElement;
 const verifyBtn = document.getElementById('verifyBtn') as HTMLButtonElement;
 const verifyAllBtn = document.getElementById('verifyAllBtn') as HTMLButtonElement;
 const verifyActions = document.getElementById('verifyActions') as HTMLDivElement;
+const undoVerifyBar = document.getElementById('undoVerifyBar') as HTMLDivElement;
+const undoVerifyText = document.getElementById('undoVerifyText') as HTMLSpanElement;
+const undoVerifyBtn = document.getElementById('undoVerifyBtn') as HTMLButtonElement;
 const alreadyVerified = document.getElementById('alreadyVerified') as HTMLDivElement;
 const verifiedTime = document.getElementById('verifiedTime') as HTMLSpanElement;
 const groupVerifyModal = document.getElementById('groupVerifyModal') as HTMLDivElement;
@@ -234,6 +244,62 @@ function showToast(message: string) {
   toast.classList.add('show');
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function hideUndoVerificationBar() {
+  lastVerificationContext = null;
+  undoVerifyBar.style.display = 'none';
+  undoVerifyText.textContent = '';
+}
+
+function openUndoVerificationBar(passengerIds: number[]) {
+  lastUndoToken += 1;
+  const token = lastUndoToken;
+  lastVerificationContext = {
+    passengerIds: [...passengerIds],
+    expiresAt: Date.now() + 15000,
+    label: passengerIds.length === 1 ? '1 penumpang baru diverifikasi' : `${passengerIds.length} penumpang baru diverifikasi`,
+  };
+
+  undoVerifyText.textContent = `${lastVerificationContext.label}. Salah pilih?`;
+  undoVerifyBar.style.display = 'flex';
+
+  window.setTimeout(() => {
+    if (token === lastUndoToken && lastVerificationContext && lastVerificationContext.expiresAt <= Date.now()) {
+      hideUndoVerificationBar();
+    }
+  }, 15050);
+}
+
+async function handleUndoLastVerification() {
+  if (!lastVerificationContext) {
+    showToast('Waktu pembatalan cepat sudah habis');
+    return;
+  }
+
+  const context = lastVerificationContext;
+  hideUndoVerificationBar();
+  const result = await unverifyPassengers(context.passengerIds, currentStaffName || 'Unknown', 'Undo cepat dari scanner');
+
+  if (!result.success) {
+    showToast(`Gagal membatalkan verifikasi: ${result.error || 'Unknown error'}`);
+    return;
+  }
+
+  const nowMatches = new Set(context.passengerIds);
+  currentMatches.forEach((passenger) => {
+    if (nowMatches.has(passenger.id)) {
+      passenger.verified = false;
+      passenger.verifiedAt = undefined;
+      passenger.verifiedBy = undefined;
+    }
+  });
+
+  if (currentMatches.length > 0) {
+    showVerifyData(currentMatches);
+  }
+
+  showToast(`✓ Verifikasi dibatalkan untuk ${context.passengerIds.length} penumpang`);
 }
 
 // ============================================
@@ -934,6 +1000,9 @@ function showVerifyData(passengers: PassengerData[]) {
   verifyError.style.display = 'none';
   verifyData.style.display = 'block';
   infoGrid.style.display = 'none';
+  if (!lastVerificationContext) {
+    undoVerifyBar.style.display = 'none';
+  }
 
   regId.textContent = currentSearchMode === 'nik'
     ? `6 Digit NIK: ${currentSearchValue}`
@@ -1086,6 +1155,7 @@ function hideVerify() {
   verifySection.style.display = 'none';
   document.body.classList.remove('verify-active');
   closeGroupVerifyModal();
+  hideUndoVerificationBar();
   selectedByNamePassengerId = null;
   currentMatches = [];
   currentSearchValue = '';
@@ -1182,6 +1252,7 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
       });
 
       showVerifyData(currentMatches);
+      openUndoVerificationBar(selectedPassengerIds);
 
       const allVerified = currentMatches.every((p) => p.verified);
       addToHistory(getLookupHistoryLabel(currentSearchMode, currentSearchValue || manualIdInput.value.trim()), allVerified ? 'verified' : 'pending');
@@ -1344,6 +1415,7 @@ retryScanBtn.addEventListener('click', () => {
 });
 verifyBtn.addEventListener('click', () => { void handleVerify(); });
 verifyAllBtn.addEventListener('click', handleVerifyAllUnverified);
+undoVerifyBtn.addEventListener('click', () => { void handleUndoLastVerification(); });
 groupVerifyConfirm.addEventListener('click', runGroupVerifyConfirm);
 groupVerifyCancel.addEventListener('click', runGroupVerifySecondary);
 closeGroupVerify.addEventListener('click', dismissGroupVerifyModal);

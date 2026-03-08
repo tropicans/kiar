@@ -214,6 +214,34 @@ export async function verifyPassengers(
     }
 }
 
+export async function unverifyPassengers(
+    passengerIds: number[],
+    verifiedBy?: string,
+    reason?: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const response = await fetch('/api/unverify-passengers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                passengerIds,
+                verifiedBy: verifiedBy || 'Unknown',
+                reason: reason || ''
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            return { success: false, error: result.error || `HTTP ${response.status}` };
+        }
+
+        return { success: true };
+    } catch (err: any) {
+        return { success: false, error: err.message };
+    }
+}
+
 // Legacy compatibility (to minimize changes in main.ts)
 export function isConfigured(): boolean {
     return true; // Always configured with local backend

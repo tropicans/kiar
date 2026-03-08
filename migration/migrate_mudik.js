@@ -256,9 +256,14 @@ async function ensureSchema() {
             verified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             verified_by VARCHAR(100) NOT NULL DEFAULT 'Unknown',
             source VARCHAR(20) NOT NULL DEFAULT 'scanner',
+            action VARCHAR(20) NOT NULL DEFAULT 'verify',
+            notes TEXT,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     `);
+
+    await pool.query("ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify'");
+    await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
 
     await pool.query(`
         CREATE INDEX IF NOT EXISTS passenger_verifications_passenger_idx
@@ -280,11 +285,12 @@ async function ensureSchema() {
     `);
 
     await pool.query(`
-        INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source)
+        INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source, action)
         SELECT p.id,
                COALESCE(p.verified_at, p.created_at, CURRENT_TIMESTAMP),
                COALESCE(NULLIF(p.verified_by, ''), 'Unknown'),
-               'import'
+               'import',
+               'verify'
         FROM passengers p
         WHERE p.verified = TRUE
           AND NOT EXISTS (

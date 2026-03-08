@@ -52,6 +52,24 @@ function mapPassengerRow(passenger) {
     };
 }
 
+async function ensureAuditSchema() {
+    await pool.query("ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify'");
+    await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
+}
+
+async function appendPassengerVerificationEvents(client, passengerIds, verifiedBy, source, action, notes = null) {
+    if (!Array.isArray(passengerIds) || passengerIds.length === 0) {
+        return;
+    }
+
+    await client.query(
+        `INSERT INTO passenger_verifications (passenger_id, verified_at, verified_by, source, action, notes)
+         SELECT id, CURRENT_TIMESTAMP, $2, $3, $4, $5
+         FROM unnest($1::int[]) AS id`,
+        [passengerIds, verifiedBy || 'Unknown', source, action, notes]
+    );
+}
+
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
@@ -304,6 +322,7 @@ app.get('/api/registrations', async (req, res) => {
 // API: Verify Registrant
 app.post('/api/verify', async (req, res) => {
     try {
+        await ensureAuditSchema();
         const { id, passengerIds, verifiedBy } = req.body;
 
         if (!passengerIds || passengerIds.length === 0) {
@@ -342,6 +361,8 @@ app.post('/api/verify', async (req, res) => {
                 );
             }
 
+            await appendPassengerVerificationEvents(client, passengerIds, verifiedBy || 'Unknown', 'scanner', 'verify');
+
             await client.query('COMMIT');
             res.json({ success: true, verifiedAt: new Date() });
         } catch (e) {
@@ -359,6 +380,7 @@ app.post('/api/verify', async (req, res) => {
 // API: Verify selected passengers (cross-registration)
 app.post('/api/verify-passengers', async (req, res) => {
     try {
+        await ensureAuditSchema();
         const { passengerIds, verifiedBy } = req.body;
 
         if (!Array.isArray(passengerIds) || passengerIds.length === 0) {
@@ -385,8 +407,64 @@ app.post('/api/verify-passengers', async (req, res) => {
                 [now, verifiedBy || 'Unknown', uniqueIds]
             );
 
+            const updatedIds = updateRes.rows.map((row) => row.id);
+            await appendPassengerVerificationEvents(client, updatedIds, verifiedBy || 'Unknown', 'scanner', 'verify');
+
             await client.query('COMMIT');
             res.json({ success: true, updatedCount: updateRes.rowCount || 0, verifiedAt: now });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.post('/api/unverify-passengers', async (req, res) => {
+    try {
+        await ensureAuditSchema();
+        const { passengerIds, verifiedBy, reason } = req.body;
+
+        if (!Array.isArray(passengerIds) || passengerIds.length === 0) {
+            return res.status(400).json({ error: 'Tidak ada peserta yang dipilih' });
+        }
+
+        const uniqueIds = [...new Set(passengerIds.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id)))];
+        if (uniqueIds.length === 0) {
+            return res.status(400).json({ error: 'ID peserta tidak valid' });
+        }
+
+        const notes = typeof reason === 'string' ? reason.trim() : '';
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const updateRes = await client.query(
+                `UPDATE passengers
+                 SET verified = FALSE,
+                     verified_at = NULL,
+                     verified_by = NULL
+                 WHERE id = ANY($1::int[])
+                   AND verified = TRUE
+                 RETURNING id`,
+                [uniqueIds]
+            );
+
+            const updatedIds = updateRes.rows.map((row) => row.id);
+            if (updatedIds.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'Peserta yang dipilih belum berstatus terverifikasi' });
+            }
+
+            await appendPassengerVerificationEvents(client, updatedIds, verifiedBy || 'Unknown', 'admin', 'unverify', notes || null);
+
+            await client.query('COMMIT');
+            res.json({ success: true, updatedCount: updatedIds.length });
         } catch (e) {
             await client.query('ROLLBACK');
             throw e;

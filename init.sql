@@ -38,6 +38,8 @@ CREATE TABLE passenger_verifications (
     verified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     verified_by VARCHAR(100) NOT NULL DEFAULT 'Unknown',
     source VARCHAR(20) NOT NULL DEFAULT 'scanner',
+    action VARCHAR(20) NOT NULL DEFAULT 'verify',
+    notes TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
