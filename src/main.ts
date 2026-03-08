@@ -1412,7 +1412,12 @@ window.addEventListener('offline', () => { updateNetworkStatus(); showToast('⚠
 
 // Keyboard
 document.addEventListener('keydown', (e) => {
-  if (isTypingTarget(e.target)) return;
+  const verifyVisible = verifySection.style.display === 'block';
+  const targetIsTyping = isTypingTarget(e.target);
+  const shortcutAllowedWhileTyping = verifyVisible
+    && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'F2' || e.key === 'a' || e.key === 'A' || /^[1-9]$/.test(e.key));
+
+  if (targetIsTyping && !shortcutAllowedWhileTyping) return;
 
   if (groupVerifyModal.style.display === 'flex' && e.key === 'Enter') {
     e.preventDefault();
@@ -1441,7 +1446,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (verifySection.style.display === 'block') {
+  if (verifyVisible) {
     if (e.key === 'Enter' && document.activeElement !== manualIdInput && !verifyBtn.disabled) {
       e.preventDefault();
       handleVerify();
