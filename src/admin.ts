@@ -89,6 +89,7 @@ const btnBackToHome = document.getElementById('btnBackToHome') as HTMLButtonElem
 
 const tableBody = document.getElementById('tableBody') as HTMLTableSectionElement;
 const totalDataCount = document.getElementById('totalDataCount') as HTMLSpanElement;
+const totalDataMeta = document.getElementById('totalDataMeta') as HTMLSpanElement;
 const themeToggle = document.getElementById('themeToggle') as HTMLButtonElement;
 const summaryRegistrations = document.getElementById('summaryRegistrations') as HTMLDivElement;
 const summaryRegistrationMeta = document.getElementById('summaryRegistrationMeta') as HTMLDivElement;
@@ -528,11 +529,13 @@ themeToggle.addEventListener('click', toggleTheme);
 statusFilter.addEventListener('change', () => {
     currentPage = 1;
     applySearchFilter();
+    updateVisibleCountLabel();
     renderTable();
 });
 activeFilter.addEventListener('change', () => {
     currentPage = 1;
     applySearchFilter();
+    updateVisibleCountLabel();
     renderTable();
 });
 closeCrudModal.addEventListener('click', closeCrudEditor);
@@ -599,6 +602,24 @@ function applySearchFilter() {
             || (p.active ? ('aktif'.includes(query) || 'active'.includes(query)) : ('nonaktif'.includes(query) || 'inactive'.includes(query))));
         return matchId || matchPhone || matchRegistrationState || matchPassenger;
     });
+}
+
+function updateVisibleCountLabel() {
+    const activeCount = registrationsData.filter((reg) => reg.active).length;
+    const inactiveCount = registrationsData.length - activeCount;
+    totalDataCount.textContent = filteredData.length.toString();
+
+    if (activeFilter.value === 'active') {
+        totalDataMeta.textContent = `(aktif saja, total aktif ${activeCount})`;
+        return;
+    }
+
+    if (activeFilter.value === 'only-inactive') {
+        totalDataMeta.textContent = `(hanya nonaktif, total nonaktif ${inactiveCount})`;
+        return;
+    }
+
+    totalDataMeta.textContent = `(aktif ${activeCount}, nonaktif ${inactiveCount})`;
 }
 
 function renderTrendChart(points: HourlyTrendPoint[]) {
@@ -782,12 +803,11 @@ async function loadData() {
         });
 
         applySearchFilter();
+        updateVisibleCountLabel();
 
         renderTable();
         renderSummary();
         renderAuditTable();
-
-        totalDataCount.textContent = registrationsData.length.toString();
 
     } catch (err: any) {
         console.error(err);

@@ -33,10 +33,49 @@
         .header-actions {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             margin-bottom: 24px;
             flex-wrap: wrap;
             gap: 16px;
+        }
+
+        .header-primary {
+            display: grid;
+            gap: 10px;
+            flex: 1;
+            min-width: 280px;
+        }
+
+        .header-toolbar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            flex: 1;
+            min-width: 320px;
+        }
+
+        .scanner-shortcut {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(74, 222, 128, 0.26);
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.16), rgba(16, 185, 129, 0.08));
+            color: var(--text-primary);
+            box-shadow: 0 10px 30px rgba(16, 185, 129, 0.12);
+        }
+
+        .scanner-shortcut strong {
+            color: #bbf7d0;
+            font-size: 13px;
+        }
+
+        .scanner-shortcut span {
+            color: var(--text-secondary);
+            font-size: 12px;
         }
 
         .header-title {
@@ -253,6 +292,7 @@
             gap: 12px;
             flex-wrap: wrap;
             margin: 0 0 16px;
+            align-items: center;
         }
 
         .admin-filter-select {
@@ -469,6 +509,16 @@
                 gap: 16px;
             }
 
+            .header-toolbar,
+            .header-primary {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .header-toolbar {
+                justify-content: stretch;
+            }
+
             .header-actions>div {
                 width: 100%;
             }
@@ -631,16 +681,33 @@
                 </section>
 
                 <div class="header-actions">
-                    <div style="flex: 1; min-width: 250px;">
+                    <div class="header-primary">
                         <h1 class="header-title">Dashboard Verifikasi Peserta</h1>
                         <p
                             style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
-                            Total Data: <span id="totalDataCount">0</span> Rombongan
+                            Tampil: <span id="totalDataCount">0</span> rombongan <span id="totalDataMeta">(aktif saja)</span>
                         </p>
                     </div>
 
-                    <!-- Search Bar -->
-                    <div class="admin-search-container" style="flex: 1; min-width: 280px; max-width: 400px;">
+                    <div class="header-toolbar">
+                        <div class="scanner-shortcut">
+                            <strong>Workflow utama</strong>
+                            <span>Kembali ke Scanner untuk verifikasi lapangan</span>
+                        </div>
+
+                        <button id="btnBackToHome" class="btn-secondary-admin" style="border-color: rgba(74, 222, 128, 0.26);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            <span class="btn-text">Kembali ke Scanner</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="header-actions" style="align-items:center; margin-bottom: 16px;">
+                    <div class="admin-search-container" style="flex: 1; min-width: 280px; max-width: 460px;">
                         <div class="search-input-wrapper" style="position: relative; width: 100%;">
                             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
                                 stroke-width="2"
@@ -653,28 +720,22 @@
                                 style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
                         </div>
                     </div>
-
-                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                        <button id="btnBackToHome" class="btn-secondary-admin">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="19" y1="12" x2="5" y2="12"></line>
-                                <polyline points="12 19 5 12 12 5"></polyline>
-                            </svg>
-                            <span class="btn-text">Ke Scanner</span>
-                        </button>
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--text-muted); font-size: 13px;">
+                        <span>Default tampilan: data aktif</span>
+                        <span>Gunakan filter untuk melihat data lama/nonaktif</span>
                     </div>
                 </div>
 
                 <div class="admin-filter-row">
+                    <div style="color: var(--text-muted); font-size: 13px; font-weight: 700;">Filter data:</div>
                     <select id="statusFilter" class="admin-filter-select">
                         <option value="all">Semua Status Verifikasi</option>
                         <option value="verified">Ada yang verified</option>
                         <option value="pending">Belum ada verified</option>
                     </select>
                     <select id="activeFilter" class="admin-filter-select">
-                        <option value="all">Semua Status Aktif</option>
                         <option value="active">Hanya aktif</option>
+                        <option value="all">Semua Status Aktif</option>
                         <option value="inactive">Termasuk nonaktif</option>
                         <option value="only-inactive">Hanya nonaktif</option>
                     </select>
