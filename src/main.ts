@@ -1414,7 +1414,9 @@ window.addEventListener('offline', () => { updateNetworkStatus(); showToast('⚠
 document.addEventListener('keydown', (e) => {
   const verifyVisible = verifySection.style.display === 'block';
   const targetIsTyping = isTypingTarget(e.target);
+  const targetIsLookupInput = e.target === manualIdInput;
   const shortcutAllowedWhileTyping = verifyVisible
+    && !targetIsLookupInput
     && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'F2' || e.key === 'a' || e.key === 'A' || /^[1-9]$/.test(e.key));
 
   if (targetIsTyping && !shortcutAllowedWhileTyping) return;
