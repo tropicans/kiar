@@ -11,6 +11,20 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 8080;
+const API_JSON_LIMIT = process.env.API_JSON_LIMIT || '256kb';
+const MAX_BULK_IDS = Math.min(Math.max(parseInt(process.env.API_MAX_BULK_IDS || '200', 10) || 200, 1), 1000);
+const MAX_VERIFIER_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_VERIFIER_LENGTH || '120', 10) || 120, 10), 255);
+const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_LENGTH || '500', 10) || 500, 50), 2000);
+
+app.disable('x-powered-by');
+app.use(express.json({ limit: API_JSON_LIMIT }));
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
 
 // Database connection
 const pool = new pg.Pool({
@@ -20,8 +34,6 @@ const pool = new pg.Pool({
     password: process.env.DB_PASSWORD || 'postgres',
     port: parseInt(process.env.DB_PORT || '5432'),
 });
-
-app.use(express.json());
 
 // Serve static files from the Vite build output (dist)
 const distPath = path.join(__dirname, '../dist');
@@ -46,6 +58,46 @@ function normalizeAdminText(rawValue) {
 function normalizeAdminNik(rawValue) {
     const digits = String(rawValue || '').replace(/\D/g, '');
     return digits || null;
+}
+
+function parsePositiveInt(value) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return null;
+    }
+    return parsed;
+}
+
+function parseUniqueIntArray(input, maxLength = MAX_BULK_IDS) {
+    if (!Array.isArray(input)) {
+        return [];
+    }
+
+    const sanitized = [];
+    const seen = new Set();
+    for (const rawValue of input) {
+        const parsed = parsePositiveInt(rawValue);
+        if (!parsed || seen.has(parsed)) {
+            continue;
+        }
+        sanitized.push(parsed);
+        seen.add(parsed);
+        if (sanitized.length >= maxLength) {
+            break;
+        }
+    }
+
+    return sanitized;
+}
+
+function sanitizeActor(rawValue) {
+    const normalized = normalizeAdminText(rawValue).slice(0, MAX_VERIFIER_LENGTH);
+    return normalized || 'Unknown';
+}
+
+function sanitizeOptionalText(rawValue, maxLength = MAX_REASON_LENGTH) {
+    const normalized = normalizeAdminText(rawValue).slice(0, maxLength);
+    return normalized || null;
 }
 
 function mapPassengerRow(passenger) {
@@ -150,8 +202,12 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
-        const { id } = req.params;
-        const result = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [id]);
+        const registrationId = parsePositiveInt(req.params.id);
+        if (!registrationId) {
+            return res.status(400).json({ error: 'ID registrasi tidak valid' });
+        }
+
+        const result = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [registrationId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
@@ -160,7 +216,7 @@ app.get('/api/lookup/:id', async (req, res) => {
         const data = result.rows[0];
 
         // Fetch passengers
-        const passengersResult = await pool.query('SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC', [id]);
+        const passengersResult = await pool.query('SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC', [registrationId]);
 
         res.json({
             id: data.id,
@@ -409,16 +465,28 @@ app.post('/api/verify', async (req, res) => {
         await ensureAuditSchema();
         const { id, passengerIds, verifiedBy } = req.body;
 
-        if (!passengerIds || passengerIds.length === 0) {
+        const registrationId = parsePositiveInt(id);
+        if (!registrationId) {
+            return res.status(400).json({ error: 'ID registrasi tidak valid' });
+        }
+
+        if (Array.isArray(passengerIds) && passengerIds.length > MAX_BULK_IDS) {
+            return res.status(400).json({ error: `Maksimal ${MAX_BULK_IDS} peserta per permintaan` });
+        }
+
+        const sanitizedPassengerIds = parseUniqueIntArray(passengerIds);
+        if (sanitizedPassengerIds.length === 0) {
             return res.status(400).json({ error: 'Tidak ada penumpang yang dipilih' });
         }
+
+        const verifierName = sanitizeActor(verifiedBy);
 
         // Transaction to prevent race conditions
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
-            for (const pId of passengerIds) {
+            for (const pId of sanitizedPassengerIds) {
                 // Check current status
                 const checkRes = await client.query('SELECT verified, registration_id FROM passengers WHERE id = $1 FOR UPDATE', [pId]);
 
@@ -427,7 +495,7 @@ app.post('/api/verify', async (req, res) => {
                     return res.status(404).json({ error: `Penumpang dengan ID ${pId} tidak ditemukan` });
                 }
 
-                if (checkRes.rows[0].registration_id !== id) {
+                if (checkRes.rows[0].registration_id !== registrationId) {
                     await client.query('ROLLBACK');
                     return res.status(400).json({ error: `Penumpang dengan ID ${pId} tidak valid untuk grup ini` });
                 }
@@ -441,11 +509,11 @@ app.post('/api/verify', async (req, res) => {
                 const now = new Date();
                 await client.query(
                     'UPDATE passengers SET verified = TRUE, verified_at = $1, verified_by = $2 WHERE id = $3',
-                    [now, verifiedBy, pId]
+                    [now, verifierName, pId]
                 );
             }
 
-            await appendPassengerVerificationEvents(client, passengerIds, verifiedBy || 'Unknown', 'scanner', 'verify');
+            await appendPassengerVerificationEvents(client, sanitizedPassengerIds, verifierName, 'scanner', 'verify');
 
             await client.query('COMMIT');
             res.json({ success: true, verifiedAt: new Date() });
@@ -471,10 +539,16 @@ app.post('/api/verify-passengers', async (req, res) => {
             return res.status(400).json({ error: 'Tidak ada peserta yang dipilih' });
         }
 
-        const uniqueIds = [...new Set(passengerIds.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id)))];
+        if (passengerIds.length > MAX_BULK_IDS) {
+            return res.status(400).json({ error: `Maksimal ${MAX_BULK_IDS} peserta per permintaan` });
+        }
+
+        const uniqueIds = parseUniqueIntArray(passengerIds);
         if (uniqueIds.length === 0) {
             return res.status(400).json({ error: 'ID peserta tidak valid' });
         }
+
+        const verifierName = sanitizeActor(verifiedBy);
 
         const client = await pool.connect();
         try {
@@ -488,11 +562,11 @@ app.post('/api/verify-passengers', async (req, res) => {
                      verified_by = COALESCE(verified_by, $2)
                  WHERE id = ANY($3::int[])
                  RETURNING id`,
-                [now, verifiedBy || 'Unknown', uniqueIds]
+                [now, verifierName, uniqueIds]
             );
 
             const updatedIds = updateRes.rows.map((row) => row.id);
-            await appendPassengerVerificationEvents(client, updatedIds, verifiedBy || 'Unknown', 'scanner', 'verify');
+            await appendPassengerVerificationEvents(client, updatedIds, verifierName, 'scanner', 'verify');
 
             await client.query('COMMIT');
             res.json({ success: true, updatedCount: updateRes.rowCount || 0, verifiedAt: now });
@@ -511,7 +585,10 @@ app.post('/api/verify-passengers', async (req, res) => {
 app.patch('/api/admin/registrations/:id', async (req, res) => {
     try {
         await ensureAdminChangeSchema();
-        const { id } = req.params;
+        const registrationId = parsePositiveInt(req.params.id);
+        if (!registrationId) {
+            return res.status(400).json({ error: 'ID registrasi tidak valid' });
+        }
         const { phone, ktpUrl, idCardUrl, active } = req.body || {};
         const updates = [];
         const values = [];
@@ -546,12 +623,12 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
             return res.status(400).json({ error: 'Tidak ada perubahan yang dikirim' });
         }
 
-        values.push(id);
+        values.push(registrationId);
 
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const previousRegistrationRes = await client.query('SELECT * FROM registrations WHERE id = $1 FOR UPDATE', [id]);
+            const previousRegistrationRes = await client.query('SELECT * FROM registrations WHERE id = $1 FOR UPDATE', [registrationId]);
             if (previousRegistrationRes.rows.length === 0) {
                 await client.query('ROLLBACK');
                 return res.status(404).json({ error: 'Rombongan tidak ditemukan' });
@@ -568,7 +645,7 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
             const previousRegistration = previousRegistrationRes.rows[0];
             const nextRegistration = registrationRes.rows[0];
 
-            const changeEntries = createChangeLogEntries('registration', id, previousRegistration, nextRegistration, [
+            const changeEntries = createChangeLogEntries('registration', registrationId, previousRegistration, nextRegistration, [
                 { column: 'phone', fieldName: 'phone', action: 'update' },
                 { column: 'ktp_url', fieldName: 'ktp_url', action: 'update' },
                 { column: 'id_card_url', fieldName: 'id_card_url', action: 'update' },
@@ -578,7 +655,7 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
             if (typeof active === 'boolean') {
                 await client.query(
                     'UPDATE passengers SET active = $1 WHERE registration_id = $2',
-                    [active, id],
+                    [active, registrationId],
                 );
             }
 
@@ -601,8 +678,8 @@ app.patch('/api/admin/registrations/:id', async (req, res) => {
 app.patch('/api/admin/passengers/:id', async (req, res) => {
     try {
         await ensureAdminChangeSchema();
-        const passengerId = parseInt(req.params.id, 10);
-        if (!Number.isInteger(passengerId)) {
+        const passengerId = parsePositiveInt(req.params.id);
+        if (!passengerId) {
             return res.status(400).json({ error: 'ID penumpang tidak valid' });
         }
 
@@ -697,12 +774,17 @@ app.post('/api/unverify-passengers', async (req, res) => {
             return res.status(400).json({ error: 'Tidak ada peserta yang dipilih' });
         }
 
-        const uniqueIds = [...new Set(passengerIds.map((id) => parseInt(id, 10)).filter((id) => Number.isInteger(id)))];
+        if (passengerIds.length > MAX_BULK_IDS) {
+            return res.status(400).json({ error: `Maksimal ${MAX_BULK_IDS} peserta per permintaan` });
+        }
+
+        const uniqueIds = parseUniqueIntArray(passengerIds);
         if (uniqueIds.length === 0) {
             return res.status(400).json({ error: 'ID peserta tidak valid' });
         }
 
-        const notes = typeof reason === 'string' ? reason.trim() : '';
+        const notes = sanitizeOptionalText(reason);
+        const verifierName = sanitizeActor(verifiedBy);
 
         const client = await pool.connect();
         try {
@@ -725,7 +807,7 @@ app.post('/api/unverify-passengers', async (req, res) => {
                 return res.status(409).json({ error: 'Peserta yang dipilih belum berstatus terverifikasi' });
             }
 
-            await appendPassengerVerificationEvents(client, updatedIds, verifiedBy || 'Unknown', 'admin', 'unverify', notes || null);
+            await appendPassengerVerificationEvents(client, updatedIds, verifierName, 'admin', 'unverify', notes);
 
             await client.query('COMMIT');
             res.json({ success: true, updatedCount: updatedIds.length });
