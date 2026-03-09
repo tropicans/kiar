@@ -145,6 +145,7 @@ const undoVerifyBtn = document.getElementById('undoVerifyBtn') as HTMLButtonElem
 const alreadyVerified = document.getElementById('alreadyVerified') as HTMLDivElement;
 const verifiedTime = document.getElementById('verifiedTime') as HTMLSpanElement;
 const groupVerifyModal = document.getElementById('groupVerifyModal') as HTMLDivElement;
+const groupVerifyTitleText = document.getElementById('groupVerifyTitleText') as HTMLSpanElement;
 const groupVerifyMessage = document.getElementById('groupVerifyMessage') as HTMLParagraphElement;
 const groupVerifyListWrap = document.getElementById('groupVerifyListWrap') as HTMLDivElement;
 const groupVerifyList = document.getElementById('groupVerifyList') as HTMLDivElement;
@@ -1183,10 +1184,11 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
     }
   }
 
-  if (!skipGroupPrompt && selectedPassengerIds.length === 1 && currentMatches.length > 1) {
+  if (!skipGroupPrompt && selectedPassengerIds.length === 1) {
     const selectedPassenger = currentMatches.find((p) => p.id === selectedPassengerIds[0]);
     const selectedRegistrationId = selectedPassenger?.registrationId || '';
 
+    // Always check if there are unverified group mates in the same registration
     if (selectedPassenger && selectedRegistrationId) {
       const groupLookup = await lookupById(selectedRegistrationId);
       const groupPassengers = groupLookup.success && groupLookup.data
@@ -1197,8 +1199,9 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
       if (sameGroupUnverified.length > 1) {
         const otherPassengers = sameGroupUnverified.filter((p) => p.id !== selectedPassenger.id);
         openGroupVerifyModal({
-          message: `Masih ada ${sameGroupUnverified.length} penumpang dalam pendaftar yang sama. Check-in semua sekarang?`,
-          confirmText: 'Ya, Check-in Semua',
+          title: 'Konfirmasi Rombongan',
+          message: `Masih ada ${sameGroupUnverified.length} pemudik dalam pendaftar ini. Verifikasi seluruh pemudik sekarang?`,
+          confirmText: 'Ya, Verifikasi Semua',
           cancelText: 'Tetap Satu Orang',
           passengerList: otherPassengers,
           onConfirm: () => {
@@ -1214,15 +1217,19 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
       }
     }
 
-    openGroupVerifyModal({
-      message: `Ditemukan ${currentMatches.length} data. Lanjut verifikasi 1 orang ini saja?`,
-      confirmText: 'Ya, Verifikasi 1 Orang',
-      cancelText: 'Batal',
-      onConfirm: () => {
-        void handleVerify(true, selectedPassenger ? [selectedPassenger.id] : selectedPassengerIds);
-      },
-    });
-    return;
+    // No unverified group mates — show safety check only if multiple search results
+    if (currentMatches.length > 1) {
+      openGroupVerifyModal({
+        title: 'Konfirmasi Verifikasi',
+        message: `Ditemukan ${currentMatches.length} data. Lanjut verifikasi 1 orang ini saja?`,
+        confirmText: 'Ya, Verifikasi 1 Orang',
+        cancelText: 'Batal',
+        onConfirm: () => {
+          void handleVerify(true, selectedPassenger ? [selectedPassenger.id] : selectedPassengerIds);
+        },
+      });
+      return;
+    }
   }
 
   if (selectedPassengerIds.length === 0) {
@@ -1283,6 +1290,7 @@ function resetVerifyBtn() {
 }
 
 function openGroupVerifyModal(options: {
+  title?: string;
   message: string;
   confirmText: string;
   cancelText: string;
@@ -1290,6 +1298,9 @@ function openGroupVerifyModal(options: {
   onConfirm: () => void;
   onCancel?: () => void;
 }) {
+  if (groupVerifyTitleText) {
+    groupVerifyTitleText.textContent = options.title || 'Konfirmasi Rombongan';
+  }
   groupVerifyMessage.textContent = options.message;
   if (options.passengerList && options.passengerList.length > 0) {
     groupVerifyListWrap.style.display = 'block';
@@ -1347,6 +1358,7 @@ function handleVerifyAllUnverified() {
   }
 
   openGroupVerifyModal({
+    title: 'Konfirmasi Verifikasi',
     message: `Verifikasi semua ${total} penumpang yang belum verified?`,
     confirmText: 'Ya, Verifikasi Semua',
     cancelText: 'Batal',

@@ -840,6 +840,38 @@
         </main>
     </div>
 
+    <!-- Group Verify Confirm Modal -->
+    <div class="settings-modal" id="groupVerifyModal" style="display:none;">
+        <div class="settings-card" style="max-width:420px;">
+            <div class="settings-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    Konfirmasi Verifikasi
+                </h2>
+                <button id="closeGroupVerify" class="icon-btn" title="Batal" aria-label="Batal verifikasi rombongan">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="settings-body">
+                <p class="settings-hint" id="groupVerifyMessage" style="margin-bottom: 16px; font-weight: 600; font-size: 15px; color: var(--text-primary);">Verifikasi semua penumpang yang belum verified?</p>
+                <div class="group-verify-list-wrap" id="groupVerifyListWrap" style="display:none; background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); border-radius: 12px; padding: 16px;">
+                    <p class="group-verify-list-title" style="margin-bottom: 12px; font-weight: 700; color: var(--text-secondary); font-size: 13px;">Pilih Penumpang yang Hadir:</p>
+                    <div class="group-verify-list" id="groupVerifyList" style="display: flex; flex-direction: column; gap: 12px; max-height: 300px; overflow-y: auto;"></div>
+                </div>
+            </div>
+            <div class="settings-footer group-verify-actions" style="margin-top: 24px; display: flex; gap: 12px; background: transparent; padding: 0; border: none;">
+                <button id="groupVerifyCancel" class="btn-secondary-admin" type="button" style="flex: 1; justify-content: center; padding: 14px;">Batal</button>
+                <button id="groupVerifyConfirm" class="btn btn-primary" type="button" style="flex: 2; padding: 14px; background: var(--accent-gradient);">Ya, Verifikasi</button>
+            </div>
+        </div>
+    </div>
+
     <!-- KTP Fullscreen Modal (Reused from Main App) -->
     <div class="fullscreen-modal" id="ktpModal" style="display:none;">
         <button class="modal-close-btn" id="modalCloseBtn" aria-label="Tutup gambar">

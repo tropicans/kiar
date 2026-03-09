@@ -202,12 +202,12 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
-        const registrationId = parsePositiveInt(req.params.id);
+        const registrationId = String(req.params.id || '').trim();
         if (!registrationId) {
             return res.status(400).json({ error: 'ID registrasi tidak valid' });
         }
 
-        const result = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [registrationId]);
+        const result = await pool.query('SELECT * FROM registrations WHERE id = $1', [registrationId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
@@ -215,8 +215,11 @@ app.get('/api/lookup/:id', async (req, res) => {
 
         const data = result.rows[0];
 
-        // Fetch passengers
-        const passengersResult = await pool.query('SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC', [registrationId]);
+        // Fetch all active passengers for group verification
+        const passengersResult = await pool.query(
+            'SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC',
+            [registrationId]
+        );
 
         res.json({
             id: data.id,
