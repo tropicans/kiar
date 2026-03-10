@@ -197,6 +197,24 @@ type CrudModalState =
     | { kind: 'passenger'; passengerId: number };
 let crudModalState: CrudModalState | null = null;
 
+// --- Admin API Key ---
+const ADMIN_KEY_STORAGE = 'adminApiKey';
+
+function getAdminApiKey(): string {
+    return localStorage.getItem(ADMIN_KEY_STORAGE) || '';
+}
+
+function getAdminHeaders(): Record<string, string> {
+    const key = getAdminApiKey();
+    if (!key) return {};
+    return { 'x-admin-key': key };
+}
+
+function adminFetch(url: string, options: RequestInit = {}): Promise<Response> {
+    const headers = { ...getAdminHeaders(), ...(options.headers as Record<string, string> || {}) };
+    return fetch(url, { ...options, headers });
+}
+
 function getStoredAdminPinHash(): string {
     return localStorage.getItem(ADMIN_PIN_KEY) || '';
 }
@@ -334,7 +352,7 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
     const reason = window.prompt(`Alasan membatalkan verifikasi untuk ${passengerName}:`, 'Salah pilih operator');
     if (reason === null) return;
 
-    const response = await fetch('/api/unverify-passengers', {
+    const response = await adminFetch('/api/unverify-passengers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -396,7 +414,7 @@ async function unverifyRegistration(registrationId: string) {
     );
     if (reason === null) return;
 
-    const response = await fetch('/api/unverify-passengers', {
+    const response = await adminFetch('/api/unverify-passengers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -415,7 +433,7 @@ async function unverifyRegistration(registrationId: string) {
 }
 
 async function updateRegistration(registrationId: string, payload: { phone?: string | null; ktpUrl?: string | null; idCardUrl?: string | null; active?: boolean }) {
-    const response = await fetch(`/api/admin/registrations/${encodeURIComponent(registrationId)}`, {
+    const response = await adminFetch(`/api/admin/registrations/${encodeURIComponent(registrationId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -430,7 +448,7 @@ async function updateRegistration(registrationId: string, payload: { phone?: str
 }
 
 async function updatePassenger(passengerId: number, payload: { nama?: string; nik?: string | null; ktpUrl?: string | null; active?: boolean }) {
-    const response = await fetch(`/api/admin/passengers/${passengerId}`, {
+    const response = await adminFetch(`/api/admin/passengers/${passengerId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -592,7 +610,9 @@ busStatsExportBtn.addEventListener('click', () => {
     if (busStatusFilterSelect.value !== 'all') params.set('status', busStatusFilterSelect.value);
     const query = params.toString();
     const url = `/api/admin/bus-stats/export${query ? `?${query}` : ''}`;
-    window.open(url, '_blank');
+    const key = getAdminApiKey();
+    const exportUrl = key ? `${url}${query ? '&' : '?'}adminKey=${encodeURIComponent(key)}` : url;
+    window.open(exportUrl, '_blank');
 });
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
@@ -907,6 +927,17 @@ function renderAuditTable() {
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
 
+    // Prompt for admin API key if not stored
+    if (!getAdminApiKey()) {
+        const key = window.prompt('Masukkan Admin API Key:');
+        if (key) {
+            localStorage.setItem(ADMIN_KEY_STORAGE, key.trim());
+        } else {
+            window.location.href = '/';
+            return;
+        }
+    }
+
     if (sessionStorage.getItem('qr_admin_access') === 'true') {
         dashboardContent.style.display = 'block';
         loadData();
@@ -919,10 +950,10 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadData() {
     try {
         const [registrationsResponse, summaryResponse, busStatsResponse, auditResponse] = await Promise.all([
-            fetch('/api/registrations?includeInactive=1'),
-            fetch('/api/admin-summary'),
-            fetch('/api/admin/bus-stats'),
-            fetch('/api/admin-audit'),
+            adminFetch('/api/registrations?includeInactive=1'),
+            adminFetch('/api/admin-summary'),
+            adminFetch('/api/admin/bus-stats'),
+            adminFetch('/api/admin-audit'),
         ]);
 
         if (!registrationsResponse.ok) throw new Error('Failed to fetch registrations');
@@ -1164,8 +1195,8 @@ async function renderTable() {
                     <button class="btn-secondary-admin" onclick="editRegistrationPhone('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center;">✎ Edit WA</button>
                     <button class="btn-secondary-admin" onclick="toggleRegistrationActive('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; ${reg.active ? '' : 'border-color: rgba(74,222,128,.35); color:#bbf7d0;'}">${reg.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
                     ${reg.passengers.some((passenger) => passenger.verified)
-                        ? `<button class="btn-secondary-admin" onclick="unverifyRegistration('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">↩ Batalkan Semua</button>`
-                        : '<span class="activity-meta">Belum ada aksi admin</span>'}
+                ? `<button class="btn-secondary-admin" onclick="unverifyRegistration('${reg.id}')" style="padding: 8px 12px; font-size: 12px; margin: 0 auto; width: 100%; justify-content: center; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">↩ Batalkan Semua</button>`
+                : '<span class="activity-meta">Belum ada aksi admin</span>'}
                 </div>
             </td>
         `;
@@ -1203,7 +1234,7 @@ let pendingVerificationGroup: {
     if (!registration) return;
 
     const unverifiedPassengers = registration.passengers.filter(p => !p.verified && p.active);
-    
+
     pendingVerificationGroup = {
         registrationId,
         passengerIds: unverifiedPassengers.map(p => p.id)
@@ -1216,7 +1247,7 @@ let pendingVerificationGroup: {
     } else {
         groupVerifyMessage.textContent = `Verifikasi rombongan ${registration.id}?`;
         groupVerifyListWrap.style.display = 'block';
-        
+
         groupVerifyList.innerHTML = unverifiedPassengers.map((p) => `
             <label class="crud-checkbox" style="margin-bottom: 8px; align-items: flex-start; cursor: pointer;">
                 <input type="checkbox" class="group-verify-checkbox" value="${p.id}" checked>
@@ -1231,7 +1262,7 @@ let pendingVerificationGroup: {
         checkboxes.forEach(cb => {
             cb.addEventListener('change', updateGroupVerifySelectedCount);
         });
-        
+
         updateGroupVerifySelectedCount();
     }
 
@@ -1241,7 +1272,7 @@ let pendingVerificationGroup: {
 function updateGroupVerifySelectedCount() {
     const checkboxes = groupVerifyList.querySelectorAll('.group-verify-checkbox:checked');
     const count = checkboxes.length;
-    
+
     if (count === 0) {
         groupVerifyConfirm.disabled = true;
         groupVerifyConfirm.textContent = 'Pilih minimal 1';
@@ -1269,7 +1300,7 @@ groupVerifyConfirm.addEventListener('click', async () => {
     if (!pendingVerificationGroup) return;
 
     let selectedIds: number[] = [];
-    
+
     const registration = getRegistrationById(pendingVerificationGroup.registrationId);
     const unverifiedPassengers = registration?.passengers.filter(p => !p.verified && p.active) || [];
 
@@ -1290,7 +1321,7 @@ groupVerifyConfirm.addEventListener('click', async () => {
     if (!approved) return;
 
     try {
-        const response = await fetch('/api/verify-passengers', {
+        const response = await adminFetch('/api/verify-passengers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

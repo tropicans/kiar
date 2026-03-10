@@ -1715,6 +1715,14 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 initTheme();
 updateNetworkStatus();
 renderHistory();
+// Prompt for server scanner PIN if not set
+if (!localStorage.getItem('scannerPin')) {
+  const pin = window.prompt('Masukkan PIN Scanner (hubungi admin jika belum tahu):');
+  if (pin) {
+    localStorage.setItem('scannerPin', pin.trim());
+  }
+}
+
 initLockScreen();
 loadKtpImage('');
 updateManualInputMode('name');
