@@ -486,23 +486,7 @@ function getRemainingLockout(type: 'login' | 'admin'): number {
   return Math.max(0, Math.ceil((until - Date.now()) / 1000));
 }
 
-// --- Lock Screen (legacy, kept for reference) ---
-function _initLockScreen() {
-  if (!isPinEnabled()) {
-    lockScreen.classList.add('hidden');
-    currentStaffName = localStorage.getItem(ACTIVE_STAFF_KEY) || '';
-    updateStaffBadge();
-    return;
-  }
 
-  lockScreen.classList.remove('hidden');
-
-  // Pre-fill last staff name
-  const lastStaff = localStorage.getItem(ACTIVE_STAFF_KEY);
-  if (lastStaff) staffNameInput.value = lastStaff;
-
-  setTimeout(() => pinInput.focus(), 100);
-}
 
 function updateStaffBadge() {
   if (currentStaffName) {
