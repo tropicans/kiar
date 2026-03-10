@@ -70,6 +70,8 @@ CREATE TABLE admin_change_logs (
 );
 
 CREATE INDEX passenger_verifications_passenger_idx ON passenger_verifications (passenger_id, verified_at DESC, id DESC);
+CREATE INDEX passengers_nama_normalized_idx ON passengers (nama_normalized) WHERE COALESCE(active, TRUE) = TRUE;
+CREATE INDEX passengers_nik_idx ON passengers (nik) WHERE COALESCE(active, TRUE) = TRUE AND nik IS NOT NULL;
 
 CREATE TABLE sync_runs (
     id BIGSERIAL PRIMARY KEY,
