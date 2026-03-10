@@ -195,12 +195,8 @@ const staffBadge = document.getElementById('staffBadge') as HTMLDivElement;
 const staffBadgeName = document.getElementById('staffBadgeName') as HTMLSpanElement;
 const compactModeBadge = document.getElementById('compactModeBadge') as HTMLDivElement;
 
-// Lock Screen
+// Lock Screen / Auth
 const lockScreen = document.getElementById('lockScreen') as HTMLDivElement;
-const pinInput = document.getElementById('pinInput') as HTMLInputElement;
-const lockError = document.getElementById('lockError') as HTMLDivElement;
-const staffNameInput = document.getElementById('staffNameInput') as HTMLInputElement;
-const lockUnlockBtn = document.getElementById('lockUnlockBtn') as HTMLButtonElement;
 
 // Admin PIN Prompt
 const adminPinModal = document.getElementById('adminPinModal') as HTMLDivElement;
@@ -429,12 +425,8 @@ async function hashPin(pin: string): Promise<string> {
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function verifyPin(enteredPin: string): Promise<boolean> {
-  const storedHash = getStoredPinHash();
-  if (!storedHash) return false;
-  const enteredHash = await hashPin(enteredPin);
-  return enteredHash === storedHash;
-}
+
+
 
 async function verifyAdminPin(enteredPin: string): Promise<boolean> {
   const storedHash = getStoredAdminPinHash();
@@ -497,55 +489,7 @@ function updateStaffBadge() {
   }
 }
 
-async function handleUnlock() {
-  // Rate limit check
-  if (isLockedOut('login')) {
-    const remaining = getRemainingLockout('login');
-    lockError.style.display = 'block';
-    lockError.textContent = `Terlalu banyak percobaan. Tunggu ${remaining} detik.`;
-    return;
-  }
 
-  const enteredPin = pinInput.value.trim();
-  const isValid = await verifyPin(enteredPin);
-
-  if (!isValid) {
-    recordFailedAttempt('login');
-    pinInput.classList.add('error');
-    lockError.style.display = 'block';
-
-    if (isLockedOut('login')) {
-      lockError.textContent = `Terlalu banyak percobaan. Tunggu 30 detik.`;
-      setTimeout(() => resetAttempts('login'), LOCKOUT_DURATION);
-    } else {
-      const left = MAX_PIN_ATTEMPTS - loginFailedAttempts;
-      lockError.textContent = `PIN salah (${left} percobaan tersisa)`;
-    }
-
-    setTimeout(() => pinInput.classList.remove('error'), 400);
-    pinInput.value = '';
-    pinInput.focus();
-    return;
-  }
-
-  const staffName = staffNameInput.value.trim();
-  if (!staffName) {
-    lockError.style.display = 'block';
-    lockError.textContent = 'Masukkan nama Anda terlebih dahulu';
-    staffNameInput.focus();
-    return;
-  }
-
-  // Unlock!
-  resetAttempts('login');
-  currentStaffName = staffName;
-  localStorage.setItem(ACTIVE_STAFF_KEY, currentStaffName);
-  lockScreen.classList.add('hidden');
-  lockError.style.display = 'none';
-  updateStaffBadge();
-  showToast(`Selamat datang, ${currentStaffName}!`);
-  setTimeout(() => focusLookupInput(true), 80);
-}
 
 // ============================================
 // Settings
@@ -1596,10 +1540,8 @@ historyToggle.addEventListener('keydown', (e) => {
 // Theme
 themeToggle.addEventListener('click', toggleTheme);
 
-// Lock Screen
-lockUnlockBtn.addEventListener('click', handleUnlock);
-pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlock(); });
-staffNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleUnlock(); });
+
+
 
 // Admin PIN
 adminPinSubmit.addEventListener('click', handleAdminPinSubmit);
@@ -1704,22 +1646,9 @@ initTheme();
 updateNetworkStatus();
 renderHistory();
 
-// Google Sign-In: if not logged in, show full-screen overlay
+// Google Sign-In: if not logged in, show lock screen with Google button
 if (!isLoggedIn()) {
-  // Create auth overlay
-  const authOverlay = document.createElement('div');
-  authOverlay.id = 'googleAuthOverlay';
-  authOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(10,10,12,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);z-index:99999;display:flex;align-items:center;justify-content:center;';
-  authOverlay.innerHTML = `
-    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px;width:100%;max-width:360px;text-align:center;">
-      <div style="font-size:40px;margin-bottom:12px;">🎫</div>
-      <h2 style="color:var(--text-primary,#fff);margin-bottom:8px;font-family:'DM Sans',sans-serif;">MUDIK YKSN 2026</h2>
-      <p style="color:var(--text-muted,#888);font-size:14px;margin-bottom:24px;">Login dengan akun Google yang sudah didaftarkan</p>
-      <div id="googleSignInBtn" style="display:flex;justify-content:center;"></div>
-      <div id="googleLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
-    </div>
-  `;
-  document.body.appendChild(authOverlay);
+  lockScreen.classList.remove('hidden');
 
   // Wait for GSI to load then render button
   const initGSI = () => {
@@ -1745,9 +1674,8 @@ if (!isLoggedIn()) {
           setSessionToken(data.token);
           setStoredUser({ email: data.email, name: data.name, picture: data.picture, role: data.role, isAdmin: data.isAdmin });
           currentStaffName = data.name;
-          localStorage.setItem('qrscan_active_staff', data.name);
-          // Remove overlay
-          authOverlay.remove();
+          localStorage.setItem(ACTIVE_STAFF_KEY, data.name);
+          lockScreen.classList.add('hidden');
           updateStaffBadge();
           showToast(`Selamat datang, ${data.name}!`);
           setTimeout(() => focusLookupInput(true), 80);
@@ -1772,8 +1700,9 @@ if (!isLoggedIn()) {
   const user = getStoredUser();
   if (user) {
     currentStaffName = user.name;
-    localStorage.setItem('qrscan_active_staff', user.name);
+    localStorage.setItem(ACTIVE_STAFF_KEY, user.name);
   }
+  lockScreen.classList.add('hidden');
   updateStaffBadge();
 }
 

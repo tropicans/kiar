@@ -26,7 +26,8 @@
   <link rel="manifest" href="/manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <title>MUDIK YKSN 2026 — Verifikasi Peserta</title>
 </head>
@@ -56,7 +57,8 @@
         </div>
         <div class="header-right">
           <!-- Compact Mode Badge -->
-          <div class="compact-mode-badge" id="compactModeBadge" style="display:none;" title="Mode tampilan ringkas aktif">
+          <div class="compact-mode-badge" id="compactModeBadge" style="display:none;"
+            title="Mode tampilan ringkas aktif">
             Compact ON
           </div>
           <!-- Staff Badge -->
@@ -150,7 +152,9 @@
               <span class="manual-submit-text">Cari Data</span>
             </button>
           </form>
-          <p class="placeholder-hint" style="margin-top: 10px;">Input 6 digit akan cari NIK, selain itu akan cari nama. Shortcut: <strong>F2</strong> fokus input, <strong>1-9</strong> pilih penumpang, <strong>A</strong> pilih semua, <strong>Enter</strong> verifikasi</p>
+          <p class="placeholder-hint" style="margin-top: 10px;">Input 6 digit akan cari NIK, selain itu akan cari nama.
+            Shortcut: <strong>F2</strong> fokus input, <strong>1-9</strong> pilih penumpang, <strong>A</strong> pilih
+            semua, <strong>Enter</strong> verifikasi</p>
         </div>
       </section>
 
@@ -206,70 +210,70 @@
 
           <!-- Info Cards -->
           <div class="info-grid">
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              ID / Mode Pencarian
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                ID / Mode Pencarian
+              </div>
+              <div class="info-value" id="regId">—</div>
             </div>
-            <div class="info-value" id="regId">—</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              Status Hasil
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                Status Hasil
+              </div>
+              <div class="info-value info-value-lg" id="regNama">—</div>
             </div>
-            <div class="info-value info-value-lg" id="regNama">—</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path
-                  d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-              Petunjuk Operator
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path
+                    d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+                Petunjuk Operator
+              </div>
+              <div class="info-value" id="regPhone">—</div>
             </div>
-            <div class="info-value" id="regPhone">—</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 3h18v4H3z" />
-                <path d="M3 11h18v10H3z" />
-              </svg>
-              Jurusan
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 3h18v4H3z" />
+                  <path d="M3 11h18v10H3z" />
+                </svg>
+                Jurusan
+              </div>
+              <div class="info-value" id="regRoute">Pilih penumpang untuk lihat detail rombongan</div>
             </div>
-            <div class="info-value" id="regRoute">Pilih penumpang untuk lihat detail rombongan</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              Kota Tujuan
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                Kota Tujuan
+              </div>
+              <div class="info-value" id="regDestination">—</div>
             </div>
-            <div class="info-value" id="regDestination">—</div>
-          </div>
-          <div class="info-card">
-            <div class="info-label">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M3 9h18" />
-              </svg>
-              Bis & Keterisian
+            <div class="info-card">
+              <div class="info-label">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18" />
+                </svg>
+                Bis & Keterisian
+              </div>
+              <div class="info-value" id="regBus">—</div>
+              <div class="info-value" id="regBusMeta" style="font-size:13px;color:var(--text-muted);">—</div>
             </div>
-            <div class="info-value" id="regBus">—</div>
-            <div class="info-value" id="regBusMeta" style="font-size:13px;color:var(--text-muted);">—</div>
           </div>
-        </div>
 
-        <!-- KTP Preview -->
+          <!-- KTP Preview -->
           <div class="ktp-preview">
             <div class="ktp-label">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -301,8 +305,7 @@
               style="display: flex; justify-content: space-between; align-items: center;">
               <span>Pilih Penumpang yang Hadir:</span>
               <button type="button" id="selectAllBtn" class="btn-ghost"
-                title="Pilih semua penumpang yang belum verified"
-                aria-label="Pilih semua penumpang yang belum verified"
+                title="Pilih semua penumpang yang belum verified" aria-label="Pilih semua penumpang yang belum verified"
                 style="padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border-glass);">Pilih
                 Semua Belum Verified</button>
             </div>
@@ -450,7 +453,7 @@
       <span id="toastMessage"></span>
     </div>
 
-    <!-- Lock Screen -->
+    <!-- Google Auth Screen -->
     <div class="lock-screen" id="lockScreen">
       <div class="lock-card">
         <div class="lock-logo">
@@ -464,19 +467,10 @@
           </svg>
           <h2>MUDIK YKSN 2026</h2>
         </div>
-        <p class="lock-subtitle">Masukkan PIN untuk melanjutkan</p>
-        <div class="pin-input-group">
-          <input type="password" id="pinInput" class="pin-input" maxlength="6" placeholder="••••" inputmode="numeric"
-            autocomplete="off" />
-        </div>
-        <div class="lock-error" id="lockError" style="display:none;">PIN salah</div>
-        <div class="staff-select-group">
-          <label class="staff-select-label">Nama Anda</label>
-          <input type="text" id="staffNameInput" class="settings-input" placeholder="Masukkan nama Anda"
-            autocomplete="name" />
-        </div>
-        <button id="lockUnlockBtn" class="btn btn-primary lock-btn">Masuk</button>
-        <p class="lock-hint">Hubungi admin untuk PIN dan akses</p>
+        <p class="lock-subtitle">Login dengan akun Google yang sudah didaftarkan</p>
+        <div id="googleSignInBtn" style="display:flex;justify-content:center;margin:20px 0;"></div>
+        <div id="googleLoginError" class="lock-error" style="display:none;"></div>
+        <p class="lock-hint">Hubungi admin untuk mendaftarkan akun</p>
       </div>
     </div>
 
