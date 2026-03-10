@@ -1,8 +1,8 @@
 {
     "id": "/",
-    "name": "MUDIK — Verifikasi Peserta",
-    "short_name": "MUDIK",
-    "description": "MUDIK untuk verifikasi kehadiran dan registrasi peserta dengan sinkronisasi CSV lokal dan dukungan offline.",
+    "name": "MUDIK YKSN 2026 — Verifikasi Peserta",
+    "short_name": "MUDIK YKSN 2026",
+    "description": "MUDIK YKSN 2026 untuk verifikasi kehadiran dan registrasi peserta dengan sinkronisasi CSV lokal dan dukungan offline.",
     "start_url": "./",
     "scope": "./",
     "display": "standalone",

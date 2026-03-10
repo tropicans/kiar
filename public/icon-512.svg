@@ -12,6 +12,9 @@
   <rect x="390" y="340" width="38" height="38" rx="5" fill="#BDB2FF"/>
   <rect x="340" y="390" width="38" height="38" rx="5" fill="#BDB2FF"/>
   <rect x="390" y="390" width="38" height="38" rx="5" fill="#FFB7C5"/>
-  <!-- MUDIK text -->
-  <text x="256" y="280" font-family="Nunito,system-ui,sans-serif" font-weight="800" font-size="85" fill="#FFB7C5" text-anchor="middle" letter-spacing="4">MUDIK</text>
+  <!-- MUDIK YKSN 2026 text -->
+  <text font-family="Nunito,system-ui,sans-serif" font-weight="800" fill="#FFB7C5" text-anchor="middle" letter-spacing="3">
+    <tspan x="256" y="270" font-size="90">MUDIK YKSN</tspan>
+    <tspan x="256" y="370" font-size="72">2026</tspan>
+  </text>
 </svg>

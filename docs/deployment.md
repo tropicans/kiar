@@ -1,6 +1,6 @@
-# 🚀 Deployment Guide — MUDIK QR Scanner
+# 🚀 Deployment Guide — MUDIK YKSN 2026 QR Scanner
 
-Panduan deploy aplikasi MUDIK ke production server (Proxmox) dengan domain via Cloudflare.
+Panduan deploy aplikasi MUDIK YKSN 2026 ke production server (Proxmox) dengan domain via Cloudflare.
 
 ## Prerequisites
 

@@ -1,4 +1,4 @@
-# MUDIK (QR Code Scanner & Verifier)
+# MUDIK YKSN 2026 (QR Code Scanner & Verifier)
 
 A fast, secure, and offline-capable QR Code scanner for event verification. Now powered by **PostgreSQL** and **Docker**.
 

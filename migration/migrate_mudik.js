@@ -393,7 +393,7 @@ async function migrate() {
                     continue;
                 }
 
-                qrCode = `MUDIK_MANUAL_${nameForId}_${phoneForId}`.substring(0, 50);
+                qrCode = `MUDIK_YKSN_2026_MANUAL_${nameForId}_${phoneForId}`.substring(0, 50);
                 console.log(`⚠️  Membuat ID Manual untuk baris tanpa QR: ${qrCode}`);
             }
 
