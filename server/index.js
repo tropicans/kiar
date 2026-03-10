@@ -20,7 +20,7 @@ const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_
 const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final.csv');
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '60', 10) || 60;
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '300', 10) || 300;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: API_JSON_LIMIT }));
@@ -71,6 +71,7 @@ const pool = new pg.Pool({
     database: process.env.DB_NAME || 'kiar',
     password: process.env.DB_PASSWORD || 'postgres',
     port: parseInt(process.env.DB_PORT || '5432'),
+    max: parseInt(process.env.DB_POOL_MAX || '20', 10) || 20,
 });
 
 const routeMetadataReady = loadRouteMetadataFromCsv();
@@ -403,26 +404,36 @@ function buildBusStatsCsv(rows) {
     return lines.join('\n');
 }
 
+let _auditSchemaReady = null;
 async function ensureAuditSchema() {
-    await pool.query("ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify'");
-    await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
+    if (!_auditSchemaReady) {
+        _auditSchemaReady = (async () => {
+            await pool.query("ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify'");
+            await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
+        })();
+    }
+    return _auditSchemaReady;
 }
 
+let _adminChangeSchemaReady = null;
 async function ensureAdminChangeSchema() {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS admin_change_logs (
-            id BIGSERIAL PRIMARY KEY,
-            entity_type VARCHAR(30) NOT NULL,
-            entity_id VARCHAR(100) NOT NULL,
-            field_name VARCHAR(50) NOT NULL,
-            action VARCHAR(30) NOT NULL,
-            old_value TEXT,
-            new_value TEXT,
-            actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
-            notes TEXT,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+    if (!_adminChangeSchemaReady) {
+        _adminChangeSchemaReady = pool.query(`
+            CREATE TABLE IF NOT EXISTS admin_change_logs (
+                id BIGSERIAL PRIMARY KEY,
+                entity_type VARCHAR(30) NOT NULL,
+                entity_id VARCHAR(100) NOT NULL,
+                field_name VARCHAR(50) NOT NULL,
+                action VARCHAR(30) NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
+                notes TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+    }
+    return _adminChangeSchemaReady;
 }
 
 async function appendAdminChangeLogs(client, changes, actor = 'Admin Dashboard', notes = null) {
@@ -1129,9 +1140,18 @@ app.post('/api/unverify-passengers', requireAdminApiKey, rateLimit, async (req, 
     }
 });
 
+// ---- Admin Summary Cache (5s TTL) ----
+let _adminSummaryCache = { data: null, expiresAt: 0 };
+const ADMIN_SUMMARY_TTL_MS = 5_000;
+
 app.get('/api/admin-summary', async (req, res) => {
     try {
         await ensureAuditSchema();
+
+        const now = Date.now();
+        if (_adminSummaryCache.data && now < _adminSummaryCache.expiresAt) {
+            return res.json(_adminSummaryCache.data);
+        }
 
         const [countResult, registrationBreakdownResult, topVerifiersResult, recentActivityResult, hourlyTrendResult] = await Promise.all([
             pool.query(
@@ -1239,7 +1259,7 @@ app.get('/api/admin-summary', async (req, res) => {
         const pendingCount = Math.max(0, passengersCount - verifiedCount);
         const verificationRate = passengersCount > 0 ? Number(((verifiedCount / passengersCount) * 100).toFixed(1)) : 0;
 
-        res.json({
+        const responseData = {
             summary: {
                 registrationsCount,
                 passengersCount,
@@ -1271,7 +1291,10 @@ app.get('/api/admin-summary', async (req, res) => {
                 verifyActions: Number(row.verify_actions || 0),
                 unverifyActions: Number(row.unverify_actions || 0),
             })),
-        });
+        };
+
+        _adminSummaryCache = { data: responseData, expiresAt: Date.now() + ADMIN_SUMMARY_TTL_MS };
+        res.json(responseData);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
