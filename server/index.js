@@ -82,7 +82,7 @@ app.use(express.static(distPath));
 
 // Serve uploaded/static assets (KTP images)
 const uploadsPath = path.join(__dirname, '../uploads');
-app.use('/uploads', express.static(uploadsPath));
+app.use('/uploads', express.static(uploadsPath, { maxAge: '1h' }));
 
 function normalizeNameQuery(rawValue) {
     return String(rawValue || '')
