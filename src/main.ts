@@ -152,6 +152,11 @@ const groupVerifyTitleText = document.getElementById('groupVerifyTitleText') as 
 const groupVerifyMessage = document.getElementById('groupVerifyMessage') as HTMLParagraphElement;
 const groupVerifyListWrap = document.getElementById('groupVerifyListWrap') as HTMLDivElement;
 const groupVerifyList = document.getElementById('groupVerifyList') as HTMLDivElement;
+const groupVerifyBusInfo = document.getElementById('groupVerifyBusInfo') as HTMLDivElement;
+const gvRoute = document.getElementById('gvRoute') as HTMLSpanElement;
+const gvDestination = document.getElementById('gvDestination') as HTMLSpanElement;
+const gvBus = document.getElementById('gvBus') as HTMLSpanElement;
+const gvCapacity = document.getElementById('gvCapacity') as HTMLSpanElement;
 const groupVerifyConfirm = document.getElementById('groupVerifyConfirm') as HTMLButtonElement;
 const groupVerifyCancel = document.getElementById('groupVerifyCancel') as HTMLButtonElement;
 const closeGroupVerify = document.getElementById('closeGroupVerify') as HTMLButtonElement;
@@ -1198,7 +1203,7 @@ function showVerifyData(passengers: PassengerData[]) {
       `;
       verifyActions.style.display = 'none';
       alreadyVerified.style.display = 'flex';
-      verifiedTime.textContent = `${verifiedCount} orang`; 
+      verifiedTime.textContent = `${verifiedCount} orang`;
     } else {
       statusBadge.className = 'status-badge status-pending';
       statusBadge.innerHTML = `
@@ -1311,6 +1316,7 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
           confirmText: 'Ya, Verifikasi Semua',
           cancelText: 'Tetap Satu Orang',
           passengerList: otherPassengers,
+          registrantData: groupLookup.data || null,
           onConfirm: () => {
             selectedByNamePassengerId = null;
             updateSelectAllButtonState();
@@ -1397,6 +1403,7 @@ function openGroupVerifyModal(options: {
   confirmText: string;
   cancelText: string;
   passengerList?: PassengerData[];
+  registrantData?: RegistrantData | null;
   onConfirm: () => void;
   onCancel?: () => void;
 }) {
@@ -1404,6 +1411,25 @@ function openGroupVerifyModal(options: {
     groupVerifyTitleText.textContent = options.title || 'Konfirmasi Rombongan';
   }
   groupVerifyMessage.textContent = options.message;
+
+  // Render bus info
+  const rd = options.registrantData;
+  if (rd && (rd.route || rd.destination || rd.busCode || rd.busCapacity)) {
+    groupVerifyBusInfo.style.display = 'block';
+    gvRoute.textContent = rd.route || '—';
+    gvDestination.textContent = rd.destination || '—';
+    const busParts = [] as string[];
+    if (rd.busCode) busParts.push(rd.busCode);
+    if (rd.busGroup) busParts.push(rd.busGroup);
+    gvBus.textContent = busParts.length > 0 ? busParts.join(' • ') : '—';
+    const totalPassengers = rd.groupSize ?? rd.passengers.length;
+    const verifiedCount = rd.passengers.filter((p) => p.verified).length;
+    const capText = rd.busCapacity ? `${rd.busCapacity} kursi` : '—';
+    gvCapacity.textContent = `${verifiedCount}/${totalPassengers} terisi • ${capText}`;
+  } else {
+    groupVerifyBusInfo.style.display = 'none';
+  }
+
   if (options.passengerList && options.passengerList.length > 0) {
     groupVerifyListWrap.style.display = 'block';
     groupVerifyList.innerHTML = options.passengerList
@@ -1428,6 +1454,7 @@ function closeGroupVerifyModal() {
   groupVerifyModal.style.display = 'none';
   groupVerifyOnConfirm = null;
   groupVerifyOnCancel = null;
+  groupVerifyBusInfo.style.display = 'none';
   groupVerifyListWrap.style.display = 'none';
   groupVerifyList.innerHTML = '';
   groupVerifyConfirm.textContent = 'Ya, Verifikasi Semua';
