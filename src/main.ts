@@ -8,7 +8,6 @@ import {
   isConfigured,
   isLoggedIn,
   setSessionToken,
-  clearSession,
   getStoredUser,
   setStoredUser,
   type PassengerData,
