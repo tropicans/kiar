@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import csv from 'csv-parser';
 import { fileURLToPath } from 'url';
+import { OAuth2Client } from 'google-auth-library';
 
 dotenv.config();
 
@@ -19,9 +20,14 @@ const MAX_VERIFIER_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_VERIF
 const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_LENGTH || '500', 10) || 500, 50), 2000);
 const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final.csv');
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
-const SCANNER_PIN = process.env.SCANNER_PIN || '';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '300', 10) || 300;
+
+// ---- Google OAuth Client ----
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: API_JSON_LIMIT }));
@@ -30,7 +36,7 @@ app.use((req, res, next) => {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; frame-src https://accounts.google.com; img-src 'self' data: blob: https://lh3.googleusercontent.com; connect-src 'self' https://accounts.google.com");
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
 });
@@ -43,12 +49,57 @@ function requireAdminApiKey(req, res, next) {
     return res.status(403).json({ error: 'Akses ditolak: Admin API key tidak valid' });
 }
 
-// ---- Scanner PIN Auth Middleware ----
-function requireScannerAuth(req, res, next) {
-    if (!SCANNER_PIN) return next(); // No PIN configured — skip auth
-    const provided = req.headers['x-scanner-pin'] || req.query.pin || '';
-    if (provided === SCANNER_PIN) return next();
-    return res.status(401).json({ error: 'PIN scanner tidak valid' });
+// ---- Session Store ----
+const sessions = new Map(); // token -> { email, name, picture, isAdmin, expiresAt }
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function createSession(email, name, picture, role) {
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const isAdmin = role === 'admin' || role === 'superadmin';
+    sessions.set(token, { email, name, picture, role, isAdmin, expiresAt: Date.now() + SESSION_TTL_MS });
+    return { token, email, name, picture, role, isAdmin };
+}
+
+function getSession(token) {
+    const session = sessions.get(token);
+    if (!session) return null;
+    if (Date.now() > session.expiresAt) { sessions.delete(token); return null; }
+    return session;
+}
+
+// Cleanup expired sessions every hour
+setInterval(() => {
+    const now = Date.now();
+    for (const [token, session] of sessions) {
+        if (now > session.expiresAt) sessions.delete(token);
+    }
+}, 60 * 60 * 1000);
+
+// ---- Session Auth Middleware ----
+function requireSession(req, res, next) {
+    if (ALLOWED_EMAILS.length === 0) return next(); // No whitelist — skip auth
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (!token) return res.status(401).json({ error: 'Login diperlukan' });
+    const session = getSession(token);
+    if (!session) return res.status(401).json({ error: 'Sesi tidak valid atau sudah kedaluwarsa' });
+    req.userSession = session;
+    return next();
+}
+
+// ---- Admin Auth: accept session with admin email OR admin API key ----
+function requireAdmin(req, res, next) {
+    // Try admin API key first
+    const apiKey = req.headers['x-admin-key'] || req.query.adminKey || '';
+    if (ADMIN_API_KEY && apiKey === ADMIN_API_KEY) return next();
+    // Try session token
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (token) {
+        const session = getSession(token);
+        if (session && session.isAdmin) { req.userSession = session; return next(); }
+    }
+    return res.status(403).json({ error: 'Akses admin ditolak' });
 }
 
 // ---- In-memory Rate Limiter ----
@@ -94,7 +145,7 @@ app.use(express.static(distPath));
 // Serve uploaded/static assets (KTP images) — behind auth + path traversal protection
 const uploadsPath = path.join(__dirname, '../uploads');
 const uploadsAbsolute = path.resolve(uploadsPath);
-app.get('/uploads/{*filepath}', requireScannerAuth, (req, res) => {
+app.get('/uploads/{*filepath}', requireSession, (req, res) => {
     const requestedPath = req.params.filepath || '';
     const filePath = path.join(uploadsAbsolute, requestedPath);
     const resolved = path.resolve(filePath);
@@ -520,8 +571,187 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
     );
 }
 
+// ============================================
+// Users Table & Google Auth
+// ============================================
+
+let _usersTableReady = null;
+async function ensureUsersTable() {
+    if (_usersTableReady) return _usersTableReady;
+    _usersTableReady = (async () => {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS app_users (
+                id SERIAL PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('operator', 'admin', 'superadmin')),
+                active BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        // Seed from env vars if table is empty
+        const { rows } = await pool.query('SELECT COUNT(*) AS cnt FROM app_users');
+        if (parseInt(rows[0].cnt) === 0) {
+            const seedUsers = [];
+            for (const email of ALLOWED_EMAILS) {
+                const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'operator';
+                seedUsers.push({ email, role });
+            }
+            // Ensure superadmin exists
+            const superadminEmail = (process.env.SUPERADMIN_EMAIL || 'tropicans@gmail.com').toLowerCase();
+            if (!seedUsers.find(u => u.email === superadminEmail)) {
+                seedUsers.push({ email: superadminEmail, role: 'superadmin' });
+            } else {
+                const existing = seedUsers.find(u => u.email === superadminEmail);
+                if (existing) existing.role = 'superadmin';
+            }
+            for (const user of seedUsers) {
+                await pool.query(
+                    'INSERT INTO app_users (email, role) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING',
+                    [user.email, user.role]
+                );
+            }
+            console.log(`Seeded ${seedUsers.length} users into app_users table`);
+        }
+    })();
+    return _usersTableReady;
+}
+
+async function getUserByEmail(email) {
+    await ensureUsersTable();
+    const { rows } = await pool.query('SELECT * FROM app_users WHERE email = $1 AND active = true', [email.toLowerCase()]);
+    return rows[0] || null;
+}
+
+// POST /api/auth/google — verify Google ID token and create session
+app.post('/api/auth/google', rateLimit, async (req, res) => {
+    try {
+        const { credential } = req.body;
+        if (!credential) return res.status(400).json({ error: 'Credential tidak ditemukan' });
+        if (!googleClient) return res.status(500).json({ error: 'Google OAuth belum dikonfigurasi' });
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        const email = payload.email.toLowerCase();
+        const name = payload.name || email;
+        const picture = payload.picture || '';
+
+        // Check user in database
+        const user = await getUserByEmail(email);
+        if (!user) {
+            return res.status(403).json({ error: `Email ${email} tidak terdaftar. Hubungi admin.` });
+        }
+
+        const session = createSession(email, name, picture, user.role);
+        res.json({
+            token: session.token,
+            email: session.email,
+            name: session.name,
+            picture: session.picture,
+            role: session.role,
+            isAdmin: session.isAdmin,
+        });
+    } catch (err) {
+        console.error('Google auth error:', err.message);
+        res.status(401).json({ error: 'Token Google tidak valid' });
+    }
+});
+
+// GET /api/auth/me — check current session
+app.get('/api/auth/me', (req, res) => {
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (!token) return res.status(401).json({ error: 'Tidak ada sesi' });
+    const session = getSession(token);
+    if (!session) return res.status(401).json({ error: 'Sesi kedaluwarsa' });
+    res.json({ email: session.email, name: session.name, picture: session.picture, role: session.role, isAdmin: session.isAdmin });
+});
+
+// ---- User Management (superadmin only) ----
+function requireSuperAdmin(req, res, next) {
+    const authHeader = req.headers['authorization'] || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const session = getSession(token);
+    if (!session || session.role !== 'superadmin') {
+        return res.status(403).json({ error: 'Hanya super admin yang dapat mengelola pengguna' });
+    }
+    req.userSession = session;
+    return next();
+}
+
+app.get('/api/admin/users', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureUsersTable();
+        const { rows } = await pool.query('SELECT id, email, role, active, created_at FROM app_users ORDER BY role, email');
+        res.json({ users: rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.post('/api/admin/users', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureUsersTable();
+        const { email, role } = req.body;
+        if (!email || !role) return res.status(400).json({ error: 'Email dan role wajib diisi' });
+        if (!['operator', 'admin'].includes(role)) return res.status(400).json({ error: 'Role harus operator atau admin' });
+        const normalizedEmail = email.trim().toLowerCase();
+        await pool.query(
+            'INSERT INTO app_users (email, role) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET role = $2, active = true',
+            [normalizedEmail, role]
+        );
+        res.json({ success: true, message: `User ${normalizedEmail} ditambahkan sebagai ${role}` });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.patch('/api/admin/users/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureUsersTable();
+        const userId = parseInt(req.params.id);
+        const { role, active } = req.body;
+        // Don't allow changing superadmin
+        const { rows: [target] } = await pool.query('SELECT * FROM app_users WHERE id = $1', [userId]);
+        if (!target) return res.status(404).json({ error: 'User tidak ditemukan' });
+        if (target.role === 'superadmin') return res.status(403).json({ error: 'Tidak dapat mengubah super admin' });
+
+        const updates = [];
+        const values = [];
+        let idx = 1;
+        if (role !== undefined && ['operator', 'admin'].includes(role)) { updates.push(`role = $${idx++}`); values.push(role); }
+        if (active !== undefined) { updates.push(`active = $${idx++}`); values.push(active); }
+        if (updates.length === 0) return res.status(400).json({ error: 'Tidak ada perubahan' });
+        values.push(userId);
+        await pool.query(`UPDATE app_users SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.delete('/api/admin/users/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureUsersTable();
+        const userId = parseInt(req.params.id);
+        const { rows: [target] } = await pool.query('SELECT * FROM app_users WHERE id = $1', [userId]);
+        if (!target) return res.status(404).json({ error: 'User tidak ditemukan' });
+        if (target.role === 'superadmin') return res.status(403).json({ error: 'Tidak dapat menghapus super admin' });
+        await pool.query('DELETE FROM app_users WHERE id = $1', [userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API: Lookup Registrant
-app.get('/api/lookup/:id', requireScannerAuth, rateLimit, async (req, res) => {
+app.get('/api/lookup/:id', requireSession, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const registrationId = String(req.params.id || '').trim().slice(0, 200);
@@ -563,7 +793,7 @@ app.get('/api/lookup/:id', requireScannerAuth, rateLimit, async (req, res) => {
 });
 
 // API: Lookup Registrant by last 6 NIK digits
-app.get('/api/lookup-nik/:last6', requireScannerAuth, rateLimit, async (req, res) => {
+app.get('/api/lookup-nik/:last6', requireSession, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -635,7 +865,7 @@ app.get('/api/lookup-nik/:last6', requireScannerAuth, rateLimit, async (req, res
 });
 
 // API: Search passengers by last 6 NIK digits
-app.get('/api/search-nik/:last6', requireScannerAuth, rateLimit, async (req, res) => {
+app.get('/api/search-nik/:last6', requireSession, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -685,7 +915,7 @@ app.get('/api/search-nik/:last6', requireScannerAuth, rateLimit, async (req, res
 });
 
 // API: Search passengers by name
-app.get('/api/search-name', requireScannerAuth, rateLimit, async (req, res) => {
+app.get('/api/search-name', requireSession, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const rawQuery = String(req.query.q || '');
@@ -749,7 +979,7 @@ app.get('/api/search-name', requireScannerAuth, rateLimit, async (req, res) => {
 });
 
 // API: Get All Registrations (for Admin Dashboard)
-app.get('/api/registrations', requireAdminApiKey, rateLimit, async (req, res) => {
+app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const includeInactive = String(req.query.includeInactive || '') === '1';
@@ -1164,7 +1394,7 @@ app.post('/api/unverify-passengers', requireAdminApiKey, rateLimit, async (req, 
 let _adminSummaryCache = { data: null, expiresAt: 0 };
 const ADMIN_SUMMARY_TTL_MS = 5_000;
 
-app.get('/api/admin-summary', requireAdminApiKey, async (req, res) => {
+app.get('/api/admin-summary', requireAdmin, async (req, res) => {
     try {
         await ensureAuditSchema();
 
@@ -1321,7 +1551,7 @@ app.get('/api/admin-summary', requireAdminApiKey, async (req, res) => {
     }
 });
 
-app.get('/api/admin/bus-stats', requireAdminApiKey, async (req, res) => {
+app.get('/api/admin/bus-stats', requireAdmin, async (req, res) => {
     try {
         const busFilter = String(req.query.bus || '').trim();
         const statusFilter = String(req.query.status || 'all').toLowerCase();
@@ -1335,7 +1565,7 @@ app.get('/api/admin/bus-stats', requireAdminApiKey, async (req, res) => {
     }
 });
 
-app.get('/api/admin/bus-stats/export', requireAdminApiKey, async (req, res) => {
+app.get('/api/admin/bus-stats/export', requireAdmin, async (req, res) => {
     try {
         const busFilter = String(req.query.bus || '').trim();
         const statusFilter = String(req.query.status || 'all').toLowerCase();
@@ -1352,7 +1582,7 @@ app.get('/api/admin/bus-stats/export', requireAdminApiKey, async (req, res) => {
     }
 });
 
-app.get('/api/admin-audit', requireAdminApiKey, async (req, res) => {
+app.get('/api/admin-audit', requireAdmin, async (req, res) => {
     try {
         await ensureAuditSchema();
         await ensureAdminChangeSchema();

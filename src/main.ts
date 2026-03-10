@@ -6,6 +6,11 @@ import {
   unverifyPassengers,
   verifyPassengers,
   isConfigured,
+  isLoggedIn,
+  setSessionToken,
+  clearSession,
+  getStoredUser,
+  setStoredUser,
   type PassengerData,
   type RegistrantData,
 } from './api';
@@ -1715,15 +1720,85 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 initTheme();
 updateNetworkStatus();
 renderHistory();
-// Prompt for server scanner PIN if not set
-if (!localStorage.getItem('scannerPin')) {
-  const pin = window.prompt('Masukkan PIN Scanner (hubungi admin jika belum tahu):');
-  if (pin) {
-    localStorage.setItem('scannerPin', pin.trim());
+
+// Google Sign-In: if not logged in, show Google button instead of PIN prompt
+if (!isLoggedIn()) {
+  // Hide the main app and show lock screen with Google button
+  const lockEl = document.getElementById('lockScreen');
+  if (lockEl) {
+    lockEl.classList.remove('hidden');
+    // Replace PIN form with Google Sign-In
+    const pinForm = lockEl.querySelector('.pin-form');
+    if (pinForm) {
+      pinForm.innerHTML = `
+        <h2 style="color: var(--text-primary); margin-bottom: 8px;">Login dengan Google</h2>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Gunakan akun Google yang sudah didaftarkan</p>
+        <div id="googleSignInBtn" style="display:flex;justify-content:center;"></div>
+        <div id="googleLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
+      `;
+    }
   }
+  // Wait for GSI to load then render button
+  const initGSI = () => {
+    if (!(window as any).google?.accounts?.id) {
+      setTimeout(initGSI, 200);
+      return;
+    }
+    (window as any).google.accounts.id.initialize({
+      client_id: '262804834085-jlrslmph5ghovf6ufq796gre8uuoq1ci.apps.googleusercontent.com',
+      callback: async (response: any) => {
+        const errorEl = document.getElementById('googleLoginError');
+        try {
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: response.credential }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = data.error || 'Login gagal'; }
+            return;
+          }
+          setSessionToken(data.token);
+          setStoredUser({ email: data.email, name: data.name, picture: data.picture, role: data.role, isAdmin: data.isAdmin });
+          // Set staff name from Google account
+          currentStaffName = data.name;
+          localStorage.setItem('qrscan_active_staff', data.name);
+          // Hide lock screen
+          const lockScreen = document.getElementById('lockScreen');
+          if (lockScreen) lockScreen.classList.add('hidden');
+          updateStaffBadge();
+          showToast(`Selamat datang, ${data.name}!`);
+          setTimeout(() => focusLookupInput(true), 80);
+        } catch (err: any) {
+          if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = err.message || 'Gagal menghubungi server'; }
+        }
+      },
+    });
+    const btnEl = document.getElementById('googleSignInBtn');
+    if (btnEl) {
+      (window as any).google.accounts.id.renderButton(btnEl, {
+        theme: 'filled_black',
+        size: 'large',
+        width: 280,
+        text: 'signin_with',
+      });
+    }
+  };
+  initGSI();
+} else {
+  // Already logged in — restore user and skip lock screen
+  const user = getStoredUser();
+  if (user) {
+    currentStaffName = user.name;
+    localStorage.setItem('qrscan_active_staff', user.name);
+  }
+  const lockEl = document.getElementById('lockScreen');
+  if (lockEl) lockEl.classList.add('hidden');
+  updateStaffBadge();
+  initLockScreen();
 }
 
-initLockScreen();
 loadKtpImage('');
 updateManualInputMode('name');
 

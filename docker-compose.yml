@@ -14,7 +14,10 @@ services:
       - PORT=8080
       - ADMIN_API_KEY=kiar-admin-2026-secret
       - RATE_LIMIT_MAX=300
-      - SCANNER_PIN=mudik2026
+      - GOOGLE_CLIENT_ID=262804834085-jlrslmph5ghovf6ufq796gre8uuoq1ci.apps.googleusercontent.com
+      - ALLOWED_EMAILS=sakitmas010@gmail.com,anatasyadea32@gmail.com,tropicans@gmail.com
+      - ADMIN_EMAILS=tropicans@gmail.com
+      - SUPERADMIN_EMAIL=tropicans@gmail.com
     volumes:
       - ./uploads:/app/uploads
     depends_on:

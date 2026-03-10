@@ -2,11 +2,40 @@
 // API Service Layer (PostgreSQL Backend)
 // ============================================
 
-/** Get auth headers for scanner PIN */
-function getScannerHeaders(): Record<string, string> {
-    const pin = localStorage.getItem('scannerPin') || '';
-    if (!pin) return {};
-    return { 'x-scanner-pin': pin };
+const SESSION_KEY = 'authToken';
+
+/** Get auth headers with session token */
+function getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem(SESSION_KEY) || '';
+    if (!token) return {};
+    return { 'Authorization': `Bearer ${token}` };
+}
+
+export function isLoggedIn(): boolean {
+    return !!localStorage.getItem(SESSION_KEY);
+}
+
+export function getSessionToken(): string {
+    return localStorage.getItem(SESSION_KEY) || '';
+}
+
+export function setSessionToken(token: string): void {
+    localStorage.setItem(SESSION_KEY, token);
+}
+
+export function clearSession(): void {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('authUser');
+}
+
+export function getStoredUser(): { email: string; name: string; picture: string; role: string; isAdmin: boolean } | null {
+    const raw = localStorage.getItem('authUser');
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function setStoredUser(user: { email: string; name: string; picture: string; role: string; isAdmin: boolean }): void {
+    localStorage.setItem('authUser', JSON.stringify(user));
 }
 
 export interface PassengerData {
@@ -72,8 +101,14 @@ export interface NameSearchResult {
 export async function lookupById(id: string): Promise<LookupResult> {
     try {
         const response = await fetch(`/api/lookup/${encodeURIComponent(id)}`, {
-            headers: getScannerHeaders(),
+            headers: getAuthHeaders(),
         });
+
+        if (response.status === 401) {
+            clearSession();
+            window.location.reload();
+            return { success: false, error: 'Sesi kedaluwarsa' };
+        }
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -96,8 +131,14 @@ export async function lookupById(id: string): Promise<LookupResult> {
 export async function lookupByNikSuffix(last6: string): Promise<LookupResult | AmbiguousLookupResult> {
     try {
         const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last6)}`, {
-            headers: getScannerHeaders(),
+            headers: getAuthHeaders(),
         });
+
+        if (response.status === 401) {
+            clearSession();
+            window.location.reload();
+            return { success: false, error: 'Sesi kedaluwarsa' };
+        }
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -129,8 +170,14 @@ export async function lookupByNikSuffix(last6: string): Promise<LookupResult | A
 export async function searchPassengersByNikSuffix(last6: string): Promise<NikSearchResult> {
     try {
         const response = await fetch(`/api/search-nik/${encodeURIComponent(last6)}`, {
-            headers: getScannerHeaders(),
+            headers: getAuthHeaders(),
         });
+
+        if (response.status === 401) {
+            clearSession();
+            window.location.reload();
+            return { success: false, error: 'Sesi kedaluwarsa' };
+        }
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -156,8 +203,14 @@ export async function searchPassengersByNikSuffix(last6: string): Promise<NikSea
 export async function searchPassengersByName(query: string): Promise<NameSearchResult> {
     try {
         const response = await fetch(`/api/search-name?q=${encodeURIComponent(query)}`, {
-            headers: getScannerHeaders(),
+            headers: getAuthHeaders(),
         });
+
+        if (response.status === 401) {
+            clearSession();
+            window.location.reload();
+            return { success: false, error: 'Sesi kedaluwarsa' };
+        }
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -193,7 +246,7 @@ export async function verifyRegistrant(
     try {
         const response = await fetch('/api/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
                 id,
                 passengerIds,
@@ -223,7 +276,7 @@ export async function verifyPassengers(
     try {
         const response = await fetch('/api/verify-passengers', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
                 passengerIds,
                 verifiedBy: verifiedBy || 'Unknown'
@@ -250,7 +303,7 @@ export async function unverifyPassengers(
     try {
         const response = await fetch('/api/unverify-passengers', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({
                 passengerIds,
                 verifiedBy: verifiedBy || 'Unknown',

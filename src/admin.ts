@@ -197,21 +197,21 @@ type CrudModalState =
     | { kind: 'passenger'; passengerId: number };
 let crudModalState: CrudModalState | null = null;
 
-// --- Admin API Key ---
-const ADMIN_KEY_STORAGE = 'adminApiKey';
+// --- Session Auth ---
+const SESSION_KEY = 'authToken';
 
-function getAdminApiKey(): string {
-    return localStorage.getItem(ADMIN_KEY_STORAGE) || '';
+function getSessionToken(): string {
+    return localStorage.getItem(SESSION_KEY) || '';
 }
 
-function getAdminHeaders(): Record<string, string> {
-    const key = getAdminApiKey();
-    if (!key) return {};
-    return { 'x-admin-key': key };
+function getAuthHeaders(): Record<string, string> {
+    const token = getSessionToken();
+    if (!token) return {};
+    return { 'Authorization': `Bearer ${token}` };
 }
 
 function adminFetch(url: string, options: RequestInit = {}): Promise<Response> {
-    const headers = { ...getAdminHeaders(), ...(options.headers as Record<string, string> || {}) };
+    const headers = { ...getAuthHeaders(), ...(options.headers as Record<string, string> || {}) };
     return fetch(url, { ...options, headers });
 }
 
@@ -610,9 +610,13 @@ busStatsExportBtn.addEventListener('click', () => {
     if (busStatusFilterSelect.value !== 'all') params.set('status', busStatusFilterSelect.value);
     const query = params.toString();
     const url = `/api/admin/bus-stats/export${query ? `?${query}` : ''}`;
-    const key = getAdminApiKey();
-    const exportUrl = key ? `${url}${query ? '&' : '?'}adminKey=${encodeURIComponent(key)}` : url;
-    window.open(exportUrl, '_blank');
+    // For window.open, we can't set headers, so open via adminFetch + blob
+    adminFetch(url).then(r => r.blob()).then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'bus-stats.csv';
+        a.click();
+    }).catch(err => showAdminToast(`Export gagal: ${err.message}`));
 });
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
@@ -927,24 +931,65 @@ function renderAuditTable() {
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
 
-    // Prompt for admin API key if not stored
-    if (!getAdminApiKey()) {
-        const key = window.prompt('Masukkan Admin API Key:');
-        if (key) {
-            localStorage.setItem(ADMIN_KEY_STORAGE, key.trim());
-        } else {
-            window.location.href = '/';
-            return;
-        }
+    const token = getSessionToken();
+    if (!token) {
+        // Show Google Sign-In
+        dashboardContent.style.display = 'none';
+        const overlay = document.createElement('div');
+        overlay.className = 'auth-overlay';
+        overlay.innerHTML = `
+            <div class="auth-container">
+                <h2 style="color: var(--text-primary); margin-bottom: 8px;">Admin Dashboard</h2>
+                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Login dengan akun Google admin</p>
+                <div id="adminGoogleBtn" style="display:flex;justify-content:center;"></div>
+                <div id="adminLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
+                <a href="/" style="display:block;margin-top:16px;color:var(--text-muted);font-size:13px;">← Kembali ke Scanner</a>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const initGSI = () => {
+            if (!(window as any).google?.accounts?.id) { setTimeout(initGSI, 200); return; }
+            (window as any).google.accounts.id.initialize({
+                client_id: '262804834085-jlrslmph5ghovf6ufq796gre8uuoq1ci.apps.googleusercontent.com',
+                callback: async (response: any) => {
+                    const errorEl = document.getElementById('adminLoginError');
+                    try {
+                        const res = await fetch('/api/auth/google', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ credential: response.credential }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = data.error || 'Login gagal'; }
+                            return;
+                        }
+                        if (!data.isAdmin) {
+                            if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = 'Akun ini bukan admin. Hubungi super admin.'; }
+                            return;
+                        }
+                        localStorage.setItem(SESSION_KEY, data.token);
+                        localStorage.setItem('authUser', JSON.stringify(data));
+                        overlay.remove();
+                        dashboardContent.style.display = 'block';
+                        loadData();
+                    } catch (err: any) {
+                        if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = err.message; }
+                    }
+                },
+            });
+            const btnEl = document.getElementById('adminGoogleBtn');
+            if (btnEl) {
+                (window as any).google.accounts.id.renderButton(btnEl, { theme: 'filled_black', size: 'large', width: 280, text: 'signin_with' });
+            }
+        };
+        initGSI();
+        return;
     }
 
-    if (sessionStorage.getItem('qr_admin_access') === 'true') {
-        dashboardContent.style.display = 'block';
-        loadData();
-    } else {
-        // Redirect back to main page if accessed directly without auth
-        window.location.href = '/';
-    }
+    dashboardContent.style.display = 'block';
+    loadData();
 });
 
 async function loadData() {

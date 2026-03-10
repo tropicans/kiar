@@ -5,10 +5,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MUDIK YKSN 2026 — Dashboard Admin</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Same responsive fonts as index.html -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
     <!-- Using the same global stylesheet -->
     <link rel="stylesheet" href="/src/style.css" />
@@ -564,7 +566,7 @@
 
         .bus-stats-progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, rgba(74,222,128,0.9), rgba(16,185,129,0.8));
+            background: linear-gradient(90deg, rgba(74, 222, 128, 0.9), rgba(16, 185, 129, 0.8));
         }
 
         .bus-stats-totals {
@@ -774,7 +776,8 @@
                                 <option value="pending">Masih Pending</option>
                             </select>
                             <button id="busStatsExportBtn" class="btn-secondary-admin" type="button" style="gap:6px;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
                                     <path d="M12 5v14" />
                                     <path d="M19 12l-7 7-7-7" />
                                 </svg>
@@ -793,7 +796,8 @@
                         <h1 class="header-title">Dashboard Verifikasi Peserta</h1>
                         <p
                             style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
-                            Tampil: <span id="totalDataCount">0</span> rombongan <span id="totalDataMeta">(aktif saja)</span>
+                            Tampil: <span id="totalDataCount">0</span> rombongan <span id="totalDataMeta">(aktif
+                                saja)</span>
                         </p>
                     </div>
 
@@ -803,7 +807,8 @@
                             <span>Kembali ke Scanner untuk verifikasi lapangan</span>
                         </div>
 
-                        <button id="btnBackToHome" class="btn-secondary-admin" style="border-color: rgba(74, 222, 128, 0.26);">
+                        <button id="btnBackToHome" class="btn-secondary-admin"
+                            style="border-color: rgba(74, 222, 128, 0.26);">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -828,7 +833,8 @@
                                 style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
                         </div>
                     </div>
-                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--text-muted); font-size: 13px;">
+                    <div
+                        style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--text-muted); font-size: 13px;">
                         <span>Default tampilan: data aktif</span>
                         <span>Gunakan filter untuk melihat data lama/nonaktif</span>
                     </div>
@@ -957,15 +963,25 @@
                 </button>
             </div>
             <div class="settings-body">
-                <p class="settings-hint" id="groupVerifyMessage" style="margin-bottom: 16px; font-weight: 600; font-size: 15px; color: var(--text-primary);">Verifikasi semua penumpang yang belum verified?</p>
-                <div class="group-verify-list-wrap" id="groupVerifyListWrap" style="display:none; background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); border-radius: 12px; padding: 16px;">
-                    <p class="group-verify-list-title" style="margin-bottom: 12px; font-weight: 700; color: var(--text-secondary); font-size: 13px;">Pilih Penumpang yang Hadir:</p>
-                    <div class="group-verify-list" id="groupVerifyList" style="display: flex; flex-direction: column; gap: 12px; max-height: 300px; overflow-y: auto;"></div>
+                <p class="settings-hint" id="groupVerifyMessage"
+                    style="margin-bottom: 16px; font-weight: 600; font-size: 15px; color: var(--text-primary);">
+                    Verifikasi semua penumpang yang belum verified?</p>
+                <div class="group-verify-list-wrap" id="groupVerifyListWrap"
+                    style="display:none; background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); border-radius: 12px; padding: 16px;">
+                    <p class="group-verify-list-title"
+                        style="margin-bottom: 12px; font-weight: 700; color: var(--text-secondary); font-size: 13px;">
+                        Pilih Penumpang yang Hadir:</p>
+                    <div class="group-verify-list" id="groupVerifyList"
+                        style="display: flex; flex-direction: column; gap: 12px; max-height: 300px; overflow-y: auto;">
+                    </div>
                 </div>
             </div>
-            <div class="settings-footer group-verify-actions" style="margin-top: 24px; display: flex; gap: 12px; background: transparent; padding: 0; border: none;">
-                <button id="groupVerifyCancel" class="btn-secondary-admin" type="button" style="flex: 1; justify-content: center; padding: 14px;">Batal</button>
-                <button id="groupVerifyConfirm" class="btn btn-primary" type="button" style="flex: 2; padding: 14px; background: var(--accent-gradient);">Ya, Verifikasi</button>
+            <div class="settings-footer group-verify-actions"
+                style="margin-top: 24px; display: flex; gap: 12px; background: transparent; padding: 0; border: none;">
+                <button id="groupVerifyCancel" class="btn-secondary-admin" type="button"
+                    style="flex: 1; justify-content: center; padding: 14px;">Batal</button>
+                <button id="groupVerifyConfirm" class="btn btn-primary" type="button"
+                    style="flex: 2; padding: 14px; background: var(--accent-gradient);">Ya, Verifikasi</button>
             </div>
         </div>
     </div>
@@ -1016,7 +1032,8 @@
                 </label>
                 <div class="crud-field">
                     <label for="crudAdminPin">Admin PIN</label>
-                    <input id="crudAdminPin" class="settings-input" type="password" inputmode="numeric" autocomplete="off" />
+                    <input id="crudAdminPin" class="settings-input" type="password" inputmode="numeric"
+                        autocomplete="off" />
                 </div>
                 <div class="crud-error" id="crudModalError" style="display:none;"></div>
             </div>
