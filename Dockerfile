@@ -17,5 +17,10 @@ COPY migration ./migration
 COPY wait-for-db.sh ./wait-for-db.sh
 RUN sed -i 's/\r$//' ./wait-for-db.sh && chmod +x ./wait-for-db.sh
 
+# Create non-root user
+RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -s /bin/sh -D appuser
+RUN chown -R appuser:appgroup /app
+USER appuser
+
 EXPOSE 8080
 CMD ["./wait-for-db.sh", "postgres", "node", "server/index.js"]

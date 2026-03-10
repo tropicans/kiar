@@ -19,6 +19,7 @@ const MAX_VERIFIER_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_VERIF
 const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_LENGTH || '500', 10) || 500, 50), 2000);
 const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final.csv');
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
+const SCANNER_PIN = process.env.SCANNER_PIN || '';
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '300', 10) || 300;
 
@@ -40,6 +41,14 @@ function requireAdminApiKey(req, res, next) {
     const provided = req.headers['x-admin-key'] || req.query.adminKey || '';
     if (provided === ADMIN_API_KEY) return next();
     return res.status(403).json({ error: 'Akses ditolak: Admin API key tidak valid' });
+}
+
+// ---- Scanner PIN Auth Middleware ----
+function requireScannerAuth(req, res, next) {
+    if (!SCANNER_PIN) return next(); // No PIN configured — skip auth
+    const provided = req.headers['x-scanner-pin'] || req.query.pin || '';
+    if (provided === SCANNER_PIN) return next();
+    return res.status(401).json({ error: 'PIN scanner tidak valid' });
 }
 
 // ---- In-memory Rate Limiter ----
@@ -82,9 +91,18 @@ const routeMetadataReady = loadRouteMetadataFromCsv();
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-// Serve uploaded/static assets (KTP images)
+// Serve uploaded/static assets (KTP images) — behind auth + path traversal protection
 const uploadsPath = path.join(__dirname, '../uploads');
-app.use('/uploads', express.static(uploadsPath, { maxAge: '1h' }));
+const uploadsAbsolute = path.resolve(uploadsPath);
+app.get('/uploads/*', requireScannerAuth, (req, res) => {
+    const requestedPath = req.params[0] || '';
+    const filePath = path.join(uploadsAbsolute, requestedPath);
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(uploadsAbsolute)) {
+        return res.status(403).json({ error: 'Akses ditolak' });
+    }
+    res.sendFile(resolved, { maxAge: 3600000 });
+});
 
 function normalizeNameQuery(rawValue) {
     return String(rawValue || '')
@@ -503,7 +521,7 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 }
 
 // API: Lookup Registrant
-app.get('/api/lookup/:id', rateLimit, async (req, res) => {
+app.get('/api/lookup/:id', requireScannerAuth, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const registrationId = String(req.params.id || '').trim().slice(0, 200);
@@ -545,7 +563,7 @@ app.get('/api/lookup/:id', rateLimit, async (req, res) => {
 });
 
 // API: Lookup Registrant by last 6 NIK digits
-app.get('/api/lookup-nik/:last6', rateLimit, async (req, res) => {
+app.get('/api/lookup-nik/:last6', requireScannerAuth, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -617,7 +635,7 @@ app.get('/api/lookup-nik/:last6', rateLimit, async (req, res) => {
 });
 
 // API: Search passengers by last 6 NIK digits
-app.get('/api/search-nik/:last6', rateLimit, async (req, res) => {
+app.get('/api/search-nik/:last6', requireScannerAuth, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -667,7 +685,7 @@ app.get('/api/search-nik/:last6', rateLimit, async (req, res) => {
 });
 
 // API: Search passengers by name
-app.get('/api/search-name', rateLimit, async (req, res) => {
+app.get('/api/search-name', requireScannerAuth, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const rawQuery = String(req.query.q || '');

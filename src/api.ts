@@ -2,6 +2,13 @@
 // API Service Layer (PostgreSQL Backend)
 // ============================================
 
+/** Get auth headers for scanner PIN */
+function getScannerHeaders(): Record<string, string> {
+    const pin = localStorage.getItem('scannerPin') || '';
+    if (!pin) return {};
+    return { 'x-scanner-pin': pin };
+}
+
 export interface PassengerData {
     id: number;
     registrationId?: string;
@@ -64,7 +71,9 @@ export interface NameSearchResult {
  */
 export async function lookupById(id: string): Promise<LookupResult> {
     try {
-        const response = await fetch(`/api/lookup/${encodeURIComponent(id)}`);
+        const response = await fetch(`/api/lookup/${encodeURIComponent(id)}`, {
+            headers: getScannerHeaders(),
+        });
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -86,7 +95,9 @@ export async function lookupById(id: string): Promise<LookupResult> {
  */
 export async function lookupByNikSuffix(last6: string): Promise<LookupResult | AmbiguousLookupResult> {
     try {
-        const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last6)}`);
+        const response = await fetch(`/api/lookup-nik/${encodeURIComponent(last6)}`, {
+            headers: getScannerHeaders(),
+        });
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -117,7 +128,9 @@ export async function lookupByNikSuffix(last6: string): Promise<LookupResult | A
  */
 export async function searchPassengersByNikSuffix(last6: string): Promise<NikSearchResult> {
     try {
-        const response = await fetch(`/api/search-nik/${encodeURIComponent(last6)}`);
+        const response = await fetch(`/api/search-nik/${encodeURIComponent(last6)}`, {
+            headers: getScannerHeaders(),
+        });
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -142,7 +155,9 @@ export async function searchPassengersByNikSuffix(last6: string): Promise<NikSea
  */
 export async function searchPassengersByName(query: string): Promise<NameSearchResult> {
     try {
-        const response = await fetch(`/api/search-name?q=${encodeURIComponent(query)}`);
+        const response = await fetch(`/api/search-name?q=${encodeURIComponent(query)}`, {
+            headers: getScannerHeaders(),
+        });
 
         if (response.status === 404) {
             return { success: false, error: 'Data tidak ditemukan' };
@@ -178,7 +193,7 @@ export async function verifyRegistrant(
     try {
         const response = await fetch('/api/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
             body: JSON.stringify({
                 id,
                 passengerIds,
@@ -208,7 +223,7 @@ export async function verifyPassengers(
     try {
         const response = await fetch('/api/verify-passengers', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
             body: JSON.stringify({
                 passengerIds,
                 verifiedBy: verifiedBy || 'Unknown'
@@ -235,7 +250,7 @@ export async function unverifyPassengers(
     try {
         const response = await fetch('/api/unverify-passengers', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getScannerHeaders() },
             body: JSON.stringify({
                 passengerIds,
                 verifiedBy: verifiedBy || 'Unknown',
