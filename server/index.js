@@ -2,6 +2,8 @@ import express from 'express';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
+import csv from 'csv-parser';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -15,6 +17,7 @@ const API_JSON_LIMIT = process.env.API_JSON_LIMIT || '256kb';
 const MAX_BULK_IDS = Math.min(Math.max(parseInt(process.env.API_MAX_BULK_IDS || '200', 10) || 200, 1), 1000);
 const MAX_VERIFIER_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_VERIFIER_LENGTH || '120', 10) || 120, 10), 255);
 const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_LENGTH || '500', 10) || 500, 50), 2000);
+const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final.csv');
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: API_JSON_LIMIT }));
@@ -35,6 +38,8 @@ const pool = new pg.Pool({
     port: parseInt(process.env.DB_PORT || '5432'),
 });
 
+const routeMetadataReady = loadRouteMetadataFromCsv();
+
 // Serve static files from the Vite build output (dist)
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
@@ -53,6 +58,64 @@ function normalizeNameQuery(rawValue) {
 
 function normalizeAdminText(rawValue) {
     return String(rawValue || '').trim().replace(/\s+/g, ' ');
+}
+
+const routeMetadata = new Map();
+
+function parseCsvInteger(rawValue) {
+    if (rawValue == null) return null;
+    const digits = String(rawValue).replace(/[^0-9-]/g, '').trim();
+    if (!digits) return null;
+    const parsed = Number.parseInt(digits, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+async function loadRouteMetadataFromCsv() {
+    return new Promise((resolve) => {
+        if (!ROUTE_CSV_PATH) {
+            resolve();
+            return;
+        }
+
+        if (!fs.existsSync(ROUTE_CSV_PATH)) {
+            console.warn(`Route metadata CSV not found at ${ROUTE_CSV_PATH}`);
+            resolve();
+            return;
+        }
+
+        const localMap = new Map();
+        fs.createReadStream(ROUTE_CSV_PATH)
+            .pipe(csv())
+            .on('data', (row) => {
+                const qr = String(row['QR Code'] || '').trim();
+                if (!qr) return;
+                localMap.set(qr, {
+                    route: (row['Jurusan'] || '').trim() || null,
+                    destination: (row['Kota Tujuan'] || '').trim() || null,
+                    busGroup: (row['Kelompok Bis'] || '').trim() || null,
+                    busCode: (row['Bis'] || '').trim() || null,
+                    groupSize: parseCsvInteger(row['Jumlah Orang']),
+                    busCapacity: parseCsvInteger(row['Jumlah Orang dalam 1 (satu) Bis']),
+                });
+            })
+            .on('end', () => {
+                routeMetadata.clear();
+                localMap.forEach((value, key) => {
+                    routeMetadata.set(key, value);
+                });
+                console.log(`Loaded route metadata for ${routeMetadata.size} registrations from CSV.`);
+                resolve();
+            })
+            .on('error', (err) => {
+                console.error('Failed to load route metadata CSV:', err);
+                resolve();
+            });
+    });
+}
+
+function getRouteMetadata(registrationId) {
+    if (!registrationId) return null;
+    return routeMetadata.get(registrationId) || null;
 }
 
 function normalizeAdminNik(rawValue) {
@@ -101,6 +164,7 @@ function sanitizeOptionalText(rawValue, maxLength = MAX_REASON_LENGTH) {
 }
 
 function mapPassengerRow(passenger) {
+    const fallback = getRouteMetadata(passenger.registration_id);
     return {
         id: passenger.id,
         registrationId: passenger.registration_id,
@@ -110,28 +174,29 @@ function mapPassengerRow(passenger) {
         verified: passenger.verified,
         verifiedAt: passenger.verified_at,
         verifiedBy: passenger.verified_by,
-        route: passenger.registration_route,
-        destination: passenger.registration_destination,
-        busGroup: passenger.registration_bus_group,
-        busCode: passenger.registration_bus_code,
-        busCapacity: passenger.registration_bus_capacity,
-        groupSize: passenger.registration_group_size,
+        route: passenger.registration_route || fallback?.route || null,
+        destination: passenger.registration_destination || fallback?.destination || null,
+        busGroup: passenger.registration_bus_group || fallback?.busGroup || null,
+        busCode: passenger.registration_bus_code || fallback?.busCode || null,
+        busCapacity: passenger.registration_bus_capacity ?? fallback?.busCapacity ?? null,
+        groupSize: passenger.registration_group_size ?? fallback?.groupSize ?? null,
     };
 }
 
 function mapRegistrationRow(registration) {
+    const fallback = getRouteMetadata(registration.id);
     return {
         id: registration.id,
         phone: registration.phone,
         phoneRaw: registration.phone_raw,
         ktpUrl: registration.ktp_url,
         idCardUrl: registration.id_card_url,
-        route: registration.jurusan,
-        destination: registration.kota_tujuan,
-        busGroup: registration.kelompok_bis,
-        busCode: registration.bis,
-        groupSize: registration.jumlah_orang,
-        busCapacity: registration.kapasitas_bis,
+        route: registration.jurusan || fallback?.route || null,
+        destination: registration.kota_tujuan || fallback?.destination || null,
+        busGroup: registration.kelompok_bis || fallback?.busGroup || null,
+        busCode: registration.bis || fallback?.busCode || null,
+        groupSize: registration.jumlah_orang ?? fallback?.groupSize ?? null,
+        busCapacity: registration.kapasitas_bis ?? fallback?.busCapacity ?? null,
         active: registration.active,
     };
 }
@@ -150,56 +215,93 @@ const extendedRegistrationColumnsReady = ensureExtendedRegistrationColumns().cat
     throw err;
 });
 
-async function fetchBusStatsRows(busFilter) {
-    await extendedRegistrationColumnsReady;
-    const params = [];
-    let whereClause = 'WHERE COALESCE(r.active, TRUE) = TRUE';
-    if (busFilter) {
-        params.push(`%${busFilter}%`);
-        whereClause += ` AND COALESCE(r.bis, '') ILIKE $${params.length}`;
-    }
+const registrationDataReady = Promise.all([extendedRegistrationColumnsReady, routeMetadataReady]);
 
+function ensureRegistrationDataReady() {
+    return registrationDataReady;
+}
+
+async function fetchBusStatsRows(busFilter) {
+    await ensureRegistrationDataReady();
     const result = await pool.query(
         `SELECT
-            COALESCE(NULLIF(r.bis, ''), 'Tanpa Kode') AS bis,
-            NULLIF(r.jurusan, '') AS jurusan,
-            NULLIF(r.kota_tujuan, '') AS kota_tujuan,
-            NULLIF(r.kelompok_bis, '') AS kelompok_bis,
-            MAX(COALESCE(r.kapasitas_bis, 0))::int AS bus_capacity,
-            SUM(COALESCE(r.jumlah_orang, 0))::int AS manifest_count,
-            COUNT(DISTINCT r.id)::int AS registrations_count,
+            r.id,
+            r.jurusan,
+            r.kota_tujuan,
+            r.kelompok_bis,
+            r.bis,
+            r.jumlah_orang,
+            r.kapasitas_bis,
             COUNT(p.id)::int AS passenger_count,
-            SUM(CASE WHEN p.verified THEN 1 ELSE 0 END)::int AS verified_count
+            COUNT(*) FILTER (WHERE p.verified = TRUE)::int AS verified_count
          FROM registrations r
-         LEFT JOIN passengers p ON p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
-         ${whereClause}
-         GROUP BY bis, jurusan, kota_tujuan, kelompok_bis
-         ORDER BY bis ASC`,
-        params,
+         LEFT JOIN passengers p
+            ON p.registration_id = r.id
+            AND COALESCE(p.active, TRUE) = TRUE
+         WHERE COALESCE(r.active, TRUE) = TRUE
+         GROUP BY r.id, r.jurusan, r.kota_tujuan, r.kelompok_bis, r.bis, r.jumlah_orang, r.kapasitas_bis`,
     );
 
-    return result.rows.map((row) => {
-        const passengerCount = Number(row.passenger_count || 0);
-        const manifestCount = Number(row.manifest_count || 0);
-        const verifiedCount = Number(row.verified_count || 0);
-        const busCapacity = Number(row.bus_capacity || 0) || null;
-        const expectedCount = manifestCount > 0 ? manifestCount : passengerCount;
-        const pendingCount = Math.max(0, passengerCount - verifiedCount);
+    const busFilterValue = (busFilter || '').toLowerCase();
+    const grouped = new Map();
 
-        return {
-            busCode: row.bis || 'Tanpa Kode',
-            route: row.jurusan || null,
-            destination: row.kota_tujuan || null,
-            busGroup: row.kelompok_bis || null,
-            busCapacity,
-            manifestCount,
-            passengerCount,
-            verifiedCount,
-            pendingCount,
-            expectedCount,
-            registrationsCount: Number(row.registrations_count || 0),
-        };
+    result.rows.forEach((row) => {
+        const fallback = getRouteMetadata(row.id) || {};
+        const cleanedBusCode = (row.bis || fallback.busCode || '').trim() || 'Tanpa Kode';
+        const key = cleanedBusCode.toLowerCase();
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                busCode: cleanedBusCode,
+                route: row.jurusan || fallback.route || null,
+                destination: row.kota_tujuan || fallback.destination || null,
+                busGroup: row.kelompok_bis || fallback.busGroup || null,
+                busCapacity: row.kapasitas_bis ?? fallback.busCapacity ?? null,
+                manifestCount: 0,
+                expectedCount: 0,
+                passengerCount: 0,
+                verifiedCount: 0,
+                pendingCount: 0,
+                registrationsCount: 0,
+            });
+        }
+
+        const entry = grouped.get(key);
+        const passengerCount = Number(row.passenger_count || 0);
+        const verifiedCount = Number(row.verified_count || 0);
+        entry.passengerCount += passengerCount;
+        entry.verifiedCount += verifiedCount;
+        entry.pendingCount += Math.max(0, passengerCount - verifiedCount);
+        entry.registrationsCount += 1;
+
+        const manifestIncrement = row.jumlah_orang ?? fallback.groupSize ?? passengerCount;
+        if (manifestIncrement) {
+            entry.manifestCount += Number(manifestIncrement);
+            entry.expectedCount += Number(manifestIncrement);
+        }
+
+        const capacityCandidate = row.kapasitas_bis ?? fallback.busCapacity;
+        if (capacityCandidate && (!entry.busCapacity || capacityCandidate > entry.busCapacity)) {
+            entry.busCapacity = capacityCandidate;
+        }
+
+        if (!entry.route && (row.jurusan || fallback.route)) {
+            entry.route = row.jurusan || fallback.route || null;
+        }
+        if (!entry.destination && (row.kota_tujuan || fallback.destination)) {
+            entry.destination = row.kota_tujuan || fallback.destination || null;
+        }
+        if (!entry.busGroup && (row.kelompok_bis || fallback.busGroup)) {
+            entry.busGroup = row.kelompok_bis || fallback.busGroup || null;
+        }
     });
+
+    let rows = Array.from(grouped.values());
+    if (busFilterValue) {
+        rows = rows.filter((row) => row.busCode.toLowerCase().includes(busFilterValue));
+    }
+
+    rows.sort((a, b) => a.busCode.localeCompare(b.busCode, 'id')); 
+    return rows;
 }
 
 function filterBusStatsByStatus(rows, status) {
@@ -351,7 +453,7 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
-        await extendedRegistrationColumnsReady;
+        await ensureRegistrationDataReady();
         const registrationId = String(req.params.id || '').trim();
         if (!registrationId) {
             return res.status(400).json({ error: 'ID registrasi tidak valid' });
@@ -393,7 +495,7 @@ app.get('/api/lookup/:id', async (req, res) => {
 // API: Lookup Registrant by last 6 NIK digits
 app.get('/api/lookup-nik/:last6', async (req, res) => {
     try {
-        await extendedRegistrationColumnsReady;
+        await ensureRegistrationDataReady();
         const { last6 } = req.params;
         const normalized = (last6 || '').replace(/\D/g, '').slice(-6);
 
@@ -465,6 +567,7 @@ app.get('/api/lookup-nik/:last6', async (req, res) => {
 // API: Search passengers by last 6 NIK digits
 app.get('/api/search-nik/:last6', async (req, res) => {
     try {
+        await ensureRegistrationDataReady();
         const { last6 } = req.params;
         const normalized = (last6 || '').replace(/\D/g, '').slice(-6);
 
@@ -514,6 +617,7 @@ app.get('/api/search-nik/:last6', async (req, res) => {
 // API: Search passengers by name
 app.get('/api/search-name', async (req, res) => {
     try {
+        await ensureRegistrationDataReady();
         const rawQuery = String(req.query.q || '');
         const normalized = normalizeNameQuery(rawQuery);
 
@@ -577,7 +681,7 @@ app.get('/api/search-name', async (req, res) => {
 // API: Get All Registrations (for Admin Dashboard)
 app.get('/api/registrations', async (req, res) => {
     try {
-        await extendedRegistrationColumnsReady;
+        await ensureRegistrationDataReady();
         const includeInactive = String(req.query.includeInactive || '') === '1';
         const registrationWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
         const passengerWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';

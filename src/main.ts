@@ -56,6 +56,7 @@ let lastVerificationContext: {
 } | null = null;
 const registrationMetaCache = new Map<string, RegistrantData>();
 let registrationInfoRequestId = 0;
+let registrationMetaVisible = false;
 
 // Rate limiter state
 let loginFailedAttempts = 0;
@@ -242,6 +243,11 @@ function isAutoScanEnabled(): boolean {
 
 function renderRegistrationMeta(data: RegistrantData | null, loading = false) {
   if (!infoGrid) return;
+  if (!registrationMetaVisible) {
+    infoGrid.style.display = 'none';
+    return;
+  }
+
   infoGrid.style.display = 'grid';
 
   if (loading) {
@@ -275,7 +281,15 @@ function renderRegistrationMeta(data: RegistrantData | null, loading = false) {
   regBusMeta.textContent = `Terverifikasi ${verifiedCount}/${totalPassengers} • ${pendingText} • ${capacityText}`;
 }
 
-async function showRegistrationInfoForPassenger(passenger: PassengerData) {
+async function showRegistrationInfoForPassenger(passenger: PassengerData, reveal = false) {
+  if (reveal && !registrationMetaVisible) {
+    registrationMetaVisible = true;
+  }
+
+  if (!registrationMetaVisible) {
+    return;
+  }
+
   if (!passenger.registrationId) {
     renderRegistrationMeta(null);
     return;
@@ -1074,6 +1088,7 @@ function showVerifyData(passengers: PassengerData[]) {
   verifyLoading.style.display = 'none';
   verifyError.style.display = 'none';
   verifyData.style.display = 'block';
+  registrationMetaVisible = false;
   renderRegistrationMeta(null);
   if (!lastVerificationContext) {
     undoVerifyBar.style.display = 'none';
@@ -1153,11 +1168,10 @@ function showVerifyData(passengers: PassengerData[]) {
           updateSelectAllButtonState();
         }
 
-      previewPassengerSelection(passengerListItems, item, p);
-      void showRegistrationInfoForPassenger(p);
-    });
+        previewPassengerSelection(passengerListItems, item, p);
+      });
 
-    item.appendChild(checkbox);
+      item.appendChild(checkbox);
       item.appendChild(details);
       passengerListItems.appendChild(item);
 
@@ -1166,7 +1180,6 @@ function showVerifyData(passengers: PassengerData[]) {
     // Tampilkan KTP otomatis hanya jika hasil tepat 1 orang
     if (passengers.length === 1 && passengers[0].ktpUrl) {
       loadKtpImage(passengers[0].ktpUrl);
-      void showRegistrationInfoForPassenger(passengers[0]);
     } else {
       loadKtpImage('');
     }
@@ -1238,6 +1251,8 @@ function hideVerify() {
   currentSearchValue = '';
   currentSearchMode = 'nik';
   focusLookupInput(true);
+  registrationMetaVisible = false;
+  renderRegistrationMeta(null);
 }
 
 // ============================================
@@ -1258,6 +1273,22 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
     if (selectedByName && !selectedByName.verified) {
       selectedPassengerIds.push(selectedByNamePassengerId);
     }
+  }
+
+  if (selectedPassengerIds.length === 0) {
+    showToast('Pilih setidaknya 1 penumpang untuk diverifikasi');
+    return;
+  }
+
+  const primaryPassenger = currentMatches.find((p) => p.id === selectedPassengerIds[0]);
+  if (!registrationMetaVisible) {
+    registrationMetaVisible = true;
+  }
+  if (primaryPassenger) {
+    renderRegistrationMeta(null, true);
+    void showRegistrationInfoForPassenger(primaryPassenger, true);
+  } else {
+    renderRegistrationMeta(null);
   }
 
   if (!skipGroupPrompt && selectedPassengerIds.length === 1) {
@@ -1306,11 +1337,6 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
       });
       return;
     }
-  }
-
-  if (selectedPassengerIds.length === 0) {
-    showToast('Pilih setidaknya 1 penumpang untuk diverifikasi');
-    return;
   }
 
   verifyBtn.disabled = true;
