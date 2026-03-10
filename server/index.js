@@ -29,6 +29,8 @@ app.use((req, res, next) => {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:");
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
 });
 
@@ -501,10 +503,10 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 }
 
 // API: Lookup Registrant
-app.get('/api/lookup/:id', async (req, res) => {
+app.get('/api/lookup/:id', rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
-        const registrationId = String(req.params.id || '').trim();
+        const registrationId = String(req.params.id || '').trim().slice(0, 200);
         if (!registrationId) {
             return res.status(400).json({ error: 'ID registrasi tidak valid' });
         }
@@ -543,7 +545,7 @@ app.get('/api/lookup/:id', async (req, res) => {
 });
 
 // API: Lookup Registrant by last 6 NIK digits
-app.get('/api/lookup-nik/:last6', async (req, res) => {
+app.get('/api/lookup-nik/:last6', rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -615,7 +617,7 @@ app.get('/api/lookup-nik/:last6', async (req, res) => {
 });
 
 // API: Search passengers by last 6 NIK digits
-app.get('/api/search-nik/:last6', async (req, res) => {
+app.get('/api/search-nik/:last6', rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const { last6 } = req.params;
@@ -665,7 +667,7 @@ app.get('/api/search-nik/:last6', async (req, res) => {
 });
 
 // API: Search passengers by name
-app.get('/api/search-name', async (req, res) => {
+app.get('/api/search-name', rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const rawQuery = String(req.query.q || '');
@@ -729,7 +731,7 @@ app.get('/api/search-name', async (req, res) => {
 });
 
 // API: Get All Registrations (for Admin Dashboard)
-app.get('/api/registrations', async (req, res) => {
+app.get('/api/registrations', requireAdminApiKey, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
         const includeInactive = String(req.query.includeInactive || '') === '1';
@@ -1144,7 +1146,7 @@ app.post('/api/unverify-passengers', requireAdminApiKey, rateLimit, async (req, 
 let _adminSummaryCache = { data: null, expiresAt: 0 };
 const ADMIN_SUMMARY_TTL_MS = 5_000;
 
-app.get('/api/admin-summary', async (req, res) => {
+app.get('/api/admin-summary', requireAdminApiKey, async (req, res) => {
     try {
         await ensureAuditSchema();
 
@@ -1301,7 +1303,7 @@ app.get('/api/admin-summary', async (req, res) => {
     }
 });
 
-app.get('/api/admin/bus-stats', async (req, res) => {
+app.get('/api/admin/bus-stats', requireAdminApiKey, async (req, res) => {
     try {
         const busFilter = String(req.query.bus || '').trim();
         const statusFilter = String(req.query.status || 'all').toLowerCase();
@@ -1315,7 +1317,7 @@ app.get('/api/admin/bus-stats', async (req, res) => {
     }
 });
 
-app.get('/api/admin/bus-stats/export', async (req, res) => {
+app.get('/api/admin/bus-stats/export', requireAdminApiKey, async (req, res) => {
     try {
         const busFilter = String(req.query.bus || '').trim();
         const statusFilter = String(req.query.status || 'all').toLowerCase();
@@ -1332,7 +1334,7 @@ app.get('/api/admin/bus-stats/export', async (req, res) => {
     }
 });
 
-app.get('/api/admin-audit', async (req, res) => {
+app.get('/api/admin-audit', requireAdminApiKey, async (req, res) => {
     try {
         await ensureAuditSchema();
         await ensureAdminChangeSchema();

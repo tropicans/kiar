@@ -12,7 +12,7 @@ services:
       - DB_PASSWORD=kiar_secret
       - DB_NAME=kiar
       - PORT=8080
-      - ADMIN_API_KEY=
+      - ADMIN_API_KEY=kiar-admin-2026-secret
       - RATE_LIMIT_MAX=300
     volumes:
       - ./uploads:/app/uploads
@@ -23,8 +23,6 @@ services:
     image: postgres:15-alpine
     container_name: mudik-db
     restart: unless-stopped
-    ports:
-      - "5435:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=kiar_secret
