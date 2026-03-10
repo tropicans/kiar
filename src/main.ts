@@ -111,14 +111,8 @@ const manualForm = document.getElementById('manualForm') as HTMLFormElement;
 const manualIdInput = document.getElementById('manualIdInput') as HTMLInputElement;
 
 // Auto-scan
-const autoScanCheck = document.getElementById('autoScanCheck') as HTMLInputElement;
-const compactModeCheck = document.getElementById('compactModeCheck') as HTMLInputElement;
-
-// Persist Auto-Scan toggle state
-autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
-autoScanCheck.addEventListener('change', () => {
-  localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString());
-});
+const autoScanCheck = document.getElementById('autoScanCheck') as HTMLInputElement | null;
+const compactModeCheck = document.getElementById('compactModeCheck') as HTMLInputElement | null;
 
 // Verification Panel
 const verifySection = document.getElementById('verifySection') as HTMLElement;
@@ -232,6 +226,10 @@ function toggleTheme() {
 function applyCompactMode(enabled: boolean) {
   document.body.classList.toggle('compact-mode', enabled);
   compactModeBadge.style.display = enabled ? 'inline-flex' : 'none';
+}
+
+function isAutoScanEnabled(): boolean {
+  return autoScanCheck?.checked === true;
 }
 
 // ============================================
@@ -904,7 +902,7 @@ async function handleScanResult(rawInput: string) {
 
     // High-Speed UX: auto-verify matched passengers in queue mode
     const selectedCount = document.querySelectorAll('.passenger-checkbox:checked:not([disabled])').length;
-    if (autoScanCheck.checked && !allVerified && selectedCount > 0) {
+    if (isAutoScanEnabled() && !allVerified && selectedCount > 0) {
       setTimeout(() => {
         handleVerify();
       }, 80);
@@ -1270,7 +1268,7 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
       showToast(`✓ Berhasil memverifikasi ${selectedPassengerIds.length} penumpang!`);
       flashSuccess();
 
-      if (autoScanCheck.checked) {
+      if (isAutoScanEnabled()) {
         setTimeout(() => hideVerify(), 250);
       } else {
         verifyBtn.focus();
@@ -1595,18 +1593,27 @@ if (!isPinEnabled()) {
 }
 
 // Persist auto-scan preference
-autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
-autoScanCheck.addEventListener('change', () => {
-  try { localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString()); } catch { /* */ }
-});
+if (autoScanCheck) {
+  autoScanCheck.checked = localStorage.getItem(AUTO_SCAN_KEY) === 'true';
+  autoScanCheck.addEventListener('change', () => {
+    try { localStorage.setItem(AUTO_SCAN_KEY, autoScanCheck.checked.toString()); } catch { /* */ }
+  });
+} else {
+  try { localStorage.removeItem(AUTO_SCAN_KEY); } catch { /* */ }
+}
 
 // Persist compact mode preference
-compactModeCheck.checked = localStorage.getItem(COMPACT_MODE_KEY) === 'true';
-applyCompactMode(compactModeCheck.checked);
-compactModeCheck.addEventListener('change', () => {
+if (compactModeCheck) {
+  compactModeCheck.checked = localStorage.getItem(COMPACT_MODE_KEY) === 'true';
   applyCompactMode(compactModeCheck.checked);
-  try { localStorage.setItem(COMPACT_MODE_KEY, compactModeCheck.checked.toString()); } catch { /* */ }
-});
+  compactModeCheck.addEventListener('change', () => {
+    applyCompactMode(compactModeCheck.checked);
+    try { localStorage.setItem(COMPACT_MODE_KEY, compactModeCheck.checked.toString()); } catch { /* */ }
+  });
+} else {
+  applyCompactMode(false);
+  try { localStorage.removeItem(COMPACT_MODE_KEY); } catch { /* */ }
+}
 
 // Refresh stale timestamps when app becomes visible again
 document.addEventListener('visibilitychange', () => {
