@@ -8,6 +8,7 @@ import {
   isConfigured,
   isLoggedIn,
   setSessionToken,
+  clearSession,
   getStoredUser,
   setStoredUser,
   type PassengerData,
@@ -1711,6 +1712,17 @@ updateManualInputMode('name');
 
 if (!isPinEnabled()) {
   setTimeout(() => focusLookupInput(), 80);
+}
+
+// Logout button
+const logoutBtn = document.getElementById('logoutBtn');
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    if (confirm('Logout dari akun ini?')) {
+      clearSession();
+      window.location.reload();
+    }
+  });
 }
 
 // Persist auto-scan preference

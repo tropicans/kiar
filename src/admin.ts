@@ -1388,3 +1388,196 @@ groupVerifyConfirm.addEventListener('click', async () => {
         showAdminToast(`Gagal verifikasi: ${error.message}`);
     }
 });
+
+// ============================================
+// User Management (Superadmin Only)
+// ============================================
+
+interface AppUser {
+    id: number;
+    email: string;
+    role: string;
+    active: boolean;
+    created_at: string;
+}
+
+async function initUserManagement() {
+    const user = JSON.parse(localStorage.getItem('authUser') || 'null');
+    if (!user || user.role !== 'superadmin') return;
+
+    // Create user management section
+    const container = document.createElement('div');
+    container.id = 'userManagementSection';
+    container.innerHTML = `
+        <div style="margin-top:32px;padding:24px;background:var(--card-bg, rgba(255,255,255,0.03));border:1px solid var(--border-color, rgba(255,255,255,0.1));border-radius:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                <h3 style="margin:0;font-size:18px;color:var(--text-primary,#fff);">👥 Kelola Pengguna</h3>
+                <button id="userLogoutBtn" style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">Logout</button>
+            </div>
+            <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
+                <input type="email" id="newUserEmail" placeholder="email@gmail.com" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border-color,rgba(255,255,255,0.15));border-radius:10px;background:var(--input-bg,rgba(255,255,255,0.05));color:var(--text-primary,#fff);font-size:14px;" />
+                <select id="newUserRole" style="padding:10px 14px;border:1px solid var(--border-color,rgba(255,255,255,0.15));border-radius:10px;background:var(--input-bg,rgba(255,255,255,0.05));color:var(--text-primary,#fff);font-size:14px;">
+                    <option value="operator">Operator</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button id="addUserBtn" style="padding:10px 20px;background:var(--primary,#22c55e);color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">+ Tambah</button>
+            </div>
+            <div id="userTableContainer" style="overflow-x:auto;"></div>
+        </div>
+    `;
+
+    // Find document body or dashboard
+    const dashboard = document.querySelector('.admin-content, .dashboard-grid, main') || document.body;
+    dashboard.appendChild(container);
+
+    // Wire up events
+    document.getElementById('addUserBtn')!.addEventListener('click', addUser);
+    document.getElementById('userLogoutBtn')!.addEventListener('click', () => {
+        if (confirm('Logout dari akun ini?')) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('authUser');
+            window.location.reload();
+        }
+    });
+
+    await loadUsers();
+}
+
+async function loadUsers() {
+    const tableContainer = document.getElementById('userTableContainer');
+    if (!tableContainer) return;
+
+    try {
+        const res = await adminFetch('/api/admin/users');
+        if (!res.ok) throw new Error('Gagal memuat daftar pengguna');
+        const data = await res.json();
+        const users: AppUser[] = data.users;
+
+        const roleLabels: Record<string, string> = { superadmin: '🔑 Super Admin', admin: '🛡️ Admin', operator: '👤 Operator' };
+        const roleColors: Record<string, string> = { superadmin: '#f59e0b', admin: '#3b82f6', operator: '#22c55e' };
+
+        tableContainer.innerHTML = `
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--border-color,rgba(255,255,255,0.1));">
+                        <th style="text-align:left;padding:10px 8px;color:var(--text-muted,#888);">Email</th>
+                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Role</th>
+                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Status</th>
+                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${users.map(u => `
+                        <tr style="border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));" data-user-id="${u.id}">
+                            <td style="padding:10px 8px;color:var(--text-primary,#fff);">${u.email}</td>
+                            <td style="text-align:center;padding:10px 8px;">
+                                ${u.role === 'superadmin'
+                ? `<span style="color:${roleColors[u.role]};font-weight:600;">${roleLabels[u.role]}</span>`
+                : `<select class="user-role-select" data-id="${u.id}" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border-color,rgba(255,255,255,0.15));background:var(--input-bg,rgba(255,255,255,0.05));color:${roleColors[u.role]};font-size:13px;">
+                                        <option value="operator" ${u.role === 'operator' ? 'selected' : ''}>👤 Operator</option>
+                                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>🛡️ Admin</option>
+                                    </select>`
+            }
+                            </td>
+                            <td style="text-align:center;padding:10px 8px;">
+                                ${u.role === 'superadmin'
+                ? '<span style="color:#22c55e;">Aktif</span>'
+                : `<button class="user-toggle-btn" data-id="${u.id}" data-active="${u.active}" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;background:${u.active ? '#22c55e22' : '#ef444422'};color:${u.active ? '#22c55e' : '#ef4444'};">${u.active ? 'Aktif' : 'Nonaktif'}</button>`
+            }
+                            </td>
+                            <td style="text-align:center;padding:10px 8px;">
+                                ${u.role === 'superadmin' ? '—' : `<button class="user-delete-btn" data-id="${u.id}" data-email="${u.email}" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;background:#ef444422;color:#ef4444;">Hapus</button>`}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        // Wire up role change
+        tableContainer.querySelectorAll('.user-role-select').forEach(sel => {
+            sel.addEventListener('change', async (e) => {
+                const target = e.target as HTMLSelectElement;
+                const id = target.dataset.id;
+                const role = target.value;
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error);
+                    showAdminToast('Role diperbarui');
+                    await loadUsers();
+                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
+            });
+        });
+
+        // Wire up toggle active
+        tableContainer.querySelectorAll('.user-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = (btn as HTMLElement).dataset.id;
+                const currentActive = (btn as HTMLElement).dataset.active === 'true';
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ active: !currentActive }),
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error);
+                    showAdminToast(currentActive ? 'User dinonaktifkan' : 'User diaktifkan');
+                    await loadUsers();
+                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
+            });
+        });
+
+        // Wire up delete
+        tableContainer.querySelectorAll('.user-delete-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = (btn as HTMLElement).dataset.id;
+                const email = (btn as HTMLElement).dataset.email;
+                if (!confirm(`Hapus user ${email}?`)) return;
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error((await res.json()).error);
+                    showAdminToast('User dihapus');
+                    await loadUsers();
+                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
+            });
+        });
+
+    } catch (err: any) {
+        tableContainer.innerHTML = `<p style="color:#ef4444;">Gagal memuat pengguna: ${err.message}</p>`;
+    }
+}
+
+async function addUser() {
+    const emailInput = document.getElementById('newUserEmail') as HTMLInputElement;
+    const roleSelect = document.getElementById('newUserRole') as HTMLSelectElement;
+    const email = emailInput.value.trim();
+    const role = roleSelect.value;
+
+    if (!email) { showAdminToast('Email wajib diisi'); return; }
+    if (!email.includes('@')) { showAdminToast('Format email tidak valid'); return; }
+
+    try {
+        const res = await adminFetch('/api/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, role }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showAdminToast(data.message || `${email} ditambahkan`);
+        emailInput.value = '';
+        await loadUsers();
+    } catch (err: any) {
+        showAdminToast(`Gagal: ${err.message}`);
+    }
+}
+
+// Initialize user management after login
+document.addEventListener('DOMContentLoaded', () => {
+    // Delay to let main DOMContentLoaded run first
+    setTimeout(() => initUserManagement(), 500);
+});
