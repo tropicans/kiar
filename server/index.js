@@ -94,8 +94,8 @@ app.use(express.static(distPath));
 // Serve uploaded/static assets (KTP images) — behind auth + path traversal protection
 const uploadsPath = path.join(__dirname, '../uploads');
 const uploadsAbsolute = path.resolve(uploadsPath);
-app.get('/uploads/*', requireScannerAuth, (req, res) => {
-    const requestedPath = req.params[0] || '';
+app.get('/uploads/:filepath+', requireScannerAuth, (req, res) => {
+    const requestedPath = req.params.filepath || '';
     const filePath = path.join(uploadsAbsolute, requestedPath);
     const resolved = path.resolve(filePath);
     if (!resolved.startsWith(uploadsAbsolute)) {
