@@ -12,12 +12,25 @@ export interface PassengerData {
     verified: boolean;
     verifiedAt?: string;
     verifiedBy?: string;
+    route?: string | null;
+    destination?: string | null;
+    busGroup?: string | null;
+    busCode?: string | null;
+    busCapacity?: number | null;
+    groupSize?: number | null;
 }
 
 export interface RegistrantData {
     id: string;
     phone: string;
     ktpUrl: string;
+    idCardUrl?: string | null;
+    route?: string | null;
+    destination?: string | null;
+    busGroup?: string | null;
+    busCode?: string | null;
+    groupSize?: number | null;
+    busCapacity?: number | null;
     passengers: PassengerData[];
     matchedPassengerIds?: number[];
 }

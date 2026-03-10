@@ -110,7 +110,156 @@ function mapPassengerRow(passenger) {
         verified: passenger.verified,
         verifiedAt: passenger.verified_at,
         verifiedBy: passenger.verified_by,
+        route: passenger.registration_route,
+        destination: passenger.registration_destination,
+        busGroup: passenger.registration_bus_group,
+        busCode: passenger.registration_bus_code,
+        busCapacity: passenger.registration_bus_capacity,
+        groupSize: passenger.registration_group_size,
     };
+}
+
+function mapRegistrationRow(registration) {
+    return {
+        id: registration.id,
+        phone: registration.phone,
+        phoneRaw: registration.phone_raw,
+        ktpUrl: registration.ktp_url,
+        idCardUrl: registration.id_card_url,
+        route: registration.jurusan,
+        destination: registration.kota_tujuan,
+        busGroup: registration.kelompok_bis,
+        busCode: registration.bis,
+        groupSize: registration.jumlah_orang,
+        busCapacity: registration.kapasitas_bis,
+        active: registration.active,
+    };
+}
+
+async function ensureExtendedRegistrationColumns() {
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS jurusan TEXT');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kota_tujuan TEXT');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kelompok_bis TEXT');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS bis TEXT');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS jumlah_orang INTEGER');
+    await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kapasitas_bis INTEGER');
+}
+
+const extendedRegistrationColumnsReady = ensureExtendedRegistrationColumns().catch((err) => {
+    console.error('Failed to ensure extended registration columns:', err);
+    throw err;
+});
+
+async function fetchBusStatsRows(busFilter) {
+    await extendedRegistrationColumnsReady;
+    const params = [];
+    let whereClause = 'WHERE COALESCE(r.active, TRUE) = TRUE';
+    if (busFilter) {
+        params.push(`%${busFilter}%`);
+        whereClause += ` AND COALESCE(r.bis, '') ILIKE $${params.length}`;
+    }
+
+    const result = await pool.query(
+        `SELECT
+            COALESCE(NULLIF(r.bis, ''), 'Tanpa Kode') AS bis,
+            NULLIF(r.jurusan, '') AS jurusan,
+            NULLIF(r.kota_tujuan, '') AS kota_tujuan,
+            NULLIF(r.kelompok_bis, '') AS kelompok_bis,
+            MAX(COALESCE(r.kapasitas_bis, 0))::int AS bus_capacity,
+            SUM(COALESCE(r.jumlah_orang, 0))::int AS manifest_count,
+            COUNT(DISTINCT r.id)::int AS registrations_count,
+            COUNT(p.id)::int AS passenger_count,
+            SUM(CASE WHEN p.verified THEN 1 ELSE 0 END)::int AS verified_count
+         FROM registrations r
+         LEFT JOIN passengers p ON p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
+         ${whereClause}
+         GROUP BY bis, jurusan, kota_tujuan, kelompok_bis
+         ORDER BY bis ASC`,
+        params,
+    );
+
+    return result.rows.map((row) => {
+        const passengerCount = Number(row.passenger_count || 0);
+        const manifestCount = Number(row.manifest_count || 0);
+        const verifiedCount = Number(row.verified_count || 0);
+        const busCapacity = Number(row.bus_capacity || 0) || null;
+        const expectedCount = manifestCount > 0 ? manifestCount : passengerCount;
+        const pendingCount = Math.max(0, passengerCount - verifiedCount);
+
+        return {
+            busCode: row.bis || 'Tanpa Kode',
+            route: row.jurusan || null,
+            destination: row.kota_tujuan || null,
+            busGroup: row.kelompok_bis || null,
+            busCapacity,
+            manifestCount,
+            passengerCount,
+            verifiedCount,
+            pendingCount,
+            expectedCount,
+            registrationsCount: Number(row.registrations_count || 0),
+        };
+    });
+}
+
+function filterBusStatsByStatus(rows, status) {
+    if (status === 'complete') {
+        return rows.filter((row) => row.passengerCount > 0 && row.pendingCount === 0);
+    }
+    if (status === 'pending') {
+        return rows.filter((row) => row.pendingCount > 0);
+    }
+    return rows;
+}
+
+function summarizeBusStats(rows) {
+    return rows.reduce((acc, row) => {
+        acc.passengerCount += row.passengerCount;
+        acc.verifiedCount += row.verifiedCount;
+        acc.pendingCount += row.pendingCount;
+        acc.manifestCount += row.manifestCount;
+        acc.expectedCount += row.expectedCount;
+        acc.registrationsCount += row.registrationsCount;
+        if (row.busCapacity) acc.busCapacity += row.busCapacity;
+        return acc;
+    }, {
+        passengerCount: 0,
+        verifiedCount: 0,
+        pendingCount: 0,
+        manifestCount: 0,
+        expectedCount: 0,
+        registrationsCount: 0,
+        busCapacity: 0,
+    });
+}
+
+function escapeCsvValue(value) {
+    if (value == null) return '';
+    const text = String(value);
+    if (/[",\n]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+}
+
+function buildBusStatsCsv(rows) {
+    const headers = ['Bis', 'Jurusan', 'Kota Tujuan', 'Kelompok Bis', 'Kapasitas Kursi', 'Total Manifest', 'Penumpang Aktif', 'Sudah Diverifikasi', 'Menunggu', 'Jumlah Rombongan'];
+    const lines = [headers.join(',')];
+    rows.forEach((row) => {
+        lines.push([
+            row.busCode,
+            row.route || '',
+            row.destination || '',
+            row.busGroup || '',
+            row.busCapacity ?? '',
+            row.manifestCount,
+            row.passengerCount,
+            row.verifiedCount,
+            row.pendingCount,
+            row.registrationsCount,
+        ].map(escapeCsvValue).join(','));
+    });
+    return lines.join('\n');
 }
 
 async function ensureAuditSchema() {
@@ -202,6 +351,7 @@ async function appendPassengerVerificationEvents(client, passengerIds, verifiedB
 // API: Lookup Registrant
 app.get('/api/lookup/:id', async (req, res) => {
     try {
+        await extendedRegistrationColumnsReady;
         const registrationId = String(req.params.id || '').trim();
         if (!registrationId) {
             return res.status(400).json({ error: 'ID registrasi tidak valid' });
@@ -213,7 +363,7 @@ app.get('/api/lookup/:id', async (req, res) => {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
         }
 
-        const data = result.rows[0];
+        const registration = mapRegistrationRow(result.rows[0]);
 
         // Fetch all active passengers for group verification
         const passengersResult = await pool.query(
@@ -222,9 +372,7 @@ app.get('/api/lookup/:id', async (req, res) => {
         );
 
         res.json({
-            id: data.id,
-            phone: data.phone,
-            ktpUrl: data.ktp_url,
+            ...registration,
             passengers: passengersResult.rows.map(p => ({
                 id: p.id,
                 nama: p.nama,
@@ -245,6 +393,7 @@ app.get('/api/lookup/:id', async (req, res) => {
 // API: Lookup Registrant by last 6 NIK digits
 app.get('/api/lookup-nik/:last6', async (req, res) => {
     try {
+        await extendedRegistrationColumnsReady;
         const { last6 } = req.params;
         const normalized = (last6 || '').replace(/\D/g, '').slice(-6);
 
@@ -291,12 +440,10 @@ app.get('/api/lookup-nik/:last6', async (req, res) => {
             })
             .map((p) => p.id);
 
-        const data = regResult.rows[0];
+        const registration = mapRegistrationRow(regResult.rows[0]);
 
         res.json({
-            id: data.id,
-            phone: data.phone,
-            ktpUrl: data.ktp_url,
+            ...registration,
             matchedPassengerIds,
             passengers: passengersResult.rows.map((p) => ({
                 id: p.id,
@@ -334,9 +481,17 @@ app.get('/api/search-nik/:last6', async (req, res) => {
                 p.ktp_url,
                 p.verified,
                 p.verified_at,
-                p.verified_by
+                p.verified_by,
+                r.jurusan AS registration_route,
+                r.kota_tujuan AS registration_destination,
+                r.kelompok_bis AS registration_bus_group,
+                r.bis AS registration_bus_code,
+                r.kapasitas_bis AS registration_bus_capacity,
+                r.jumlah_orang AS registration_group_size
             FROM passengers p
+            JOIN registrations r ON r.id = p.registration_id
             WHERE COALESCE(p.active, TRUE) = TRUE
+              AND COALESCE(r.active, TRUE) = TRUE
               AND RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
             ORDER BY p.nama ASC, p.id ASC`,
             [normalized]
@@ -379,9 +534,17 @@ app.get('/api/search-name', async (req, res) => {
                 p.verified,
                 p.verified_at,
                 p.verified_by,
-                lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) AS search_name
+                lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) AS search_name,
+                r.jurusan AS registration_route,
+                r.kota_tujuan AS registration_destination,
+                r.kelompok_bis AS registration_bus_group,
+                r.bis AS registration_bus_code,
+                r.kapasitas_bis AS registration_bus_capacity,
+                r.jumlah_orang AS registration_group_size
             FROM passengers p
+            JOIN registrations r ON r.id = p.registration_id
             WHERE COALESCE(p.active, TRUE) = TRUE
+              AND COALESCE(r.active, TRUE) = TRUE
               AND lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) LIKE $2
             ORDER BY
                 CASE
@@ -414,6 +577,7 @@ app.get('/api/search-name', async (req, res) => {
 // API: Get All Registrations (for Admin Dashboard)
 app.get('/api/registrations', async (req, res) => {
     try {
+        await extendedRegistrationColumnsReady;
         const includeInactive = String(req.query.includeInactive || '') === '1';
         const registrationWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
         const passengerWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
@@ -432,13 +596,9 @@ app.get('/api/registrations', async (req, res) => {
 
         // Group passengers by registration_id
         const groupedData = registrations.map(reg => {
+            const base = mapRegistrationRow(reg);
             return {
-                id: reg.id,
-                phone: reg.phone,
-                phoneRaw: reg.phone_raw,
-                ktpUrl: reg.ktp_url,
-                idCardUrl: reg.id_card_url,
-                active: reg.active,
+                ...base,
                 passengers: passengers
                     .filter(p => p.registration_id === reg.id)
                     .map(p => ({
@@ -969,6 +1129,37 @@ app.get('/api/admin-summary', async (req, res) => {
                 unverifyActions: Number(row.unverify_actions || 0),
             })),
         });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/admin/bus-stats', async (req, res) => {
+    try {
+        const busFilter = String(req.query.bus || '').trim();
+        const statusFilter = String(req.query.status || 'all').toLowerCase();
+        const rows = await fetchBusStatsRows(busFilter);
+        const filteredRows = filterBusStatsByStatus(rows, statusFilter);
+        const totals = summarizeBusStats(filteredRows);
+        res.json({ items: filteredRows, totals });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/admin/bus-stats/export', async (req, res) => {
+    try {
+        const busFilter = String(req.query.bus || '').trim();
+        const statusFilter = String(req.query.status || 'all').toLowerCase();
+        const rows = await fetchBusStatsRows(busFilter);
+        const filteredRows = filterBusStatsByStatus(rows, statusFilter);
+        const csv = buildBusStatsCsv(filteredRows);
+        const filename = `bus-stats-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csv);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });

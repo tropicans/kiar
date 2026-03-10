@@ -162,6 +162,14 @@ function normalizeNik(rawNik) {
     return nik || null;
 }
 
+function parseIntegerFromValue(rawValue) {
+    if (rawValue == null) return null;
+    const digits = extractDigits(rawValue);
+    if (!digits) return null;
+    const parsed = Number.parseInt(digits, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
 function validateHeaders(headers, sourceLabel) {
     const normalizedHeaders = headers.map((header) => normalizeHeaderName(header));
     const missing = REQUIRED_HEADERS.filter((header) => !normalizedHeaders.includes(header));
@@ -399,6 +407,12 @@ async function migrate() {
 
             const kkUrl = row['Kartu Keluarga'];
             const idCardUrl = row['Kartu Tanda Pengenal Pegawai'];
+            const jurusan = row['Jurusan'] ? row['Jurusan'].trim() : null;
+            const kotaTujuan = row['Kota Tujuan'] ? row['Kota Tujuan'].trim() : null;
+            const kelompokBis = row['Kelompok Bis'] ? row['Kelompok Bis'].trim() : null;
+            const bisCode = row['Bis'] ? row['Bis'].trim() : null;
+            const jumlahOrang = parseIntegerFromValue(row['Jumlah Orang']);
+            const kapasitasBis = parseIntegerFromValue(row['Jumlah Orang dalam 1 (satu) Bis']);
             const pegawaiNameNormalized = normalizeName(row['Nama Pegawai']);
 
             process.stdout.write(`Sedang memproses ${qrCode}... `);
@@ -416,16 +430,48 @@ async function migrate() {
             }
 
             await client.query(
-                `INSERT INTO registrations (id, phone, phone_raw, ktp_url, id_card_url, active, last_seen_at)
-                 VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
+                `INSERT INTO registrations (
+                     id,
+                     phone,
+                     phone_raw,
+                     ktp_url,
+                     id_card_url,
+                     jurusan,
+                     kota_tujuan,
+                     kelompok_bis,
+                     bis,
+                     jumlah_orang,
+                     kapasitas_bis,
+                     active,
+                     last_seen_at
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, CURRENT_TIMESTAMP)
                  ON CONFLICT (id) DO UPDATE SET
                      phone = EXCLUDED.phone,
                      phone_raw = EXCLUDED.phone_raw,
                      ktp_url = COALESCE(EXCLUDED.ktp_url, registrations.ktp_url),
                      id_card_url = COALESCE(EXCLUDED.id_card_url, registrations.id_card_url),
+                     jurusan = COALESCE(EXCLUDED.jurusan, registrations.jurusan),
+                     kota_tujuan = COALESCE(EXCLUDED.kota_tujuan, registrations.kota_tujuan),
+                     kelompok_bis = COALESCE(EXCLUDED.kelompok_bis, registrations.kelompok_bis),
+                     bis = COALESCE(EXCLUDED.bis, registrations.bis),
+                     jumlah_orang = COALESCE(EXCLUDED.jumlah_orang, registrations.jumlah_orang),
+                     kapasitas_bis = COALESCE(EXCLUDED.kapasitas_bis, registrations.kapasitas_bis),
                      active = TRUE,
                      last_seen_at = CURRENT_TIMESTAMP`,
-                [qrCode, normalizedPhone, phoneRaw, localKtpPath || kkUrl, localIdCardPath || idCardUrl],
+                [
+                    qrCode,
+                    normalizedPhone,
+                    phoneRaw,
+                    localKtpPath || kkUrl,
+                    localIdCardPath || idCardUrl,
+                    jurusan,
+                    kotaTujuan,
+                    kelompokBis,
+                    bisCode,
+                    jumlahOrang,
+                    kapasitasBis,
+                ],
             );
             processedRegistrationIds.add(qrCode);
 

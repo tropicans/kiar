@@ -53,6 +53,33 @@ interface RecentActivityItem {
     registrationId: string;
 }
 
+interface BusStatsEntry {
+    busCode: string;
+    route: string | null;
+    destination: string | null;
+    busGroup: string | null;
+    busCapacity: number | null;
+    manifestCount: number;
+    passengerCount: number;
+    verifiedCount: number;
+    pendingCount: number;
+    expectedCount: number;
+    registrationsCount: number;
+}
+
+interface BusStatsResponse {
+    items: BusStatsEntry[];
+    totals: {
+        passengerCount: number;
+        verifiedCount: number;
+        pendingCount: number;
+        manifestCount: number;
+        expectedCount: number;
+        registrationsCount: number;
+        busCapacity: number;
+    };
+}
+
 interface HourlyTrendPoint {
     hourLabel: string;
     totalActions: number;
@@ -148,6 +175,11 @@ const groupVerifyList = document.getElementById('groupVerifyList') as HTMLDivEle
 const groupVerifyConfirm = document.getElementById('groupVerifyConfirm') as HTMLButtonElement;
 const groupVerifyCancel = document.getElementById('groupVerifyCancel') as HTMLButtonElement;
 const closeGroupVerify = document.getElementById('closeGroupVerify') as HTMLButtonElement;
+const busStatsList = document.getElementById('busStatsList') as HTMLDivElement;
+const busStatsTotals = document.getElementById('busStatsTotals') as HTMLDivElement;
+const busFilterSelect = document.getElementById('busFilterSelect') as HTMLSelectElement;
+const busStatusFilterSelect = document.getElementById('busStatusFilter') as HTMLSelectElement;
+const busStatsExportBtn = document.getElementById('busStatsExportBtn') as HTMLButtonElement;
 
 // --- State ---
 let registrationsData: Registration[] = [];
@@ -159,6 +191,7 @@ let adminSummaryData: AdminSummaryResponse | null = null;
 let adminAuditEntries: AdminAuditEntry[] = [];
 let verificationTrendChart: Chart | null = null;
 let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
+let busStatsData: BusStatsEntry[] = [];
 type CrudModalState =
     | { kind: 'registration'; registrationId: string }
     | { kind: 'passenger'; passengerId: number };
@@ -547,6 +580,20 @@ activeFilter.addEventListener('change', () => {
     updateVisibleCountLabel();
     renderTable();
 });
+busFilterSelect.addEventListener('change', () => {
+    renderBusStats();
+});
+busStatusFilterSelect.addEventListener('change', () => {
+    renderBusStats();
+});
+busStatsExportBtn.addEventListener('click', () => {
+    const params = new URLSearchParams();
+    if (busFilterSelect.value) params.set('bus', busFilterSelect.value);
+    if (busStatusFilterSelect.value !== 'all') params.set('status', busStatusFilterSelect.value);
+    const query = params.toString();
+    const url = `/api/admin/bus-stats/export${query ? `?${query}` : ''}`;
+    window.open(url, '_blank');
+});
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
 crudSaveBtn.addEventListener('click', () => { void saveCrudModal(); });
@@ -686,6 +733,91 @@ function renderTrendChart(points: HourlyTrendPoint[]) {
     });
 }
 
+function computeBusTotals(entries: BusStatsEntry[]) {
+    return entries.reduce((acc, entry) => {
+        acc.busCount += 1;
+        acc.passengerCount += entry.passengerCount;
+        acc.verifiedCount += entry.verifiedCount;
+        acc.pendingCount += entry.pendingCount;
+        acc.registrationsCount += entry.registrationsCount;
+        acc.manifestCount += entry.manifestCount;
+        return acc;
+    }, { busCount: 0, passengerCount: 0, verifiedCount: 0, pendingCount: 0, registrationsCount: 0, manifestCount: 0 });
+}
+
+function populateBusFilterOptions() {
+    const currentValue = busFilterSelect.value;
+    const options = Array.from(new Set(busStatsData.map((entry) => entry.busCode))).filter(Boolean).sort();
+    busFilterSelect.innerHTML = '<option value="">Semua Bis</option>' + options.map((code) => `<option value="${code}">${code}</option>`).join('');
+    if (currentValue && options.includes(currentValue)) {
+        busFilterSelect.value = currentValue;
+    }
+}
+
+function getFilteredBusStats(): BusStatsEntry[] {
+    const busValue = busFilterSelect.value;
+    const statusValue = busStatusFilterSelect.value;
+    return busStatsData.filter((entry) => {
+        const matchesBus = !busValue || entry.busCode === busValue;
+        if (!matchesBus) return false;
+        if (statusValue === 'complete') return entry.pendingCount === 0 && entry.passengerCount > 0;
+        if (statusValue === 'pending') return entry.pendingCount > 0;
+        return true;
+    });
+}
+
+function renderBusStats() {
+    if (!busStatsList) return;
+    if (!busStatsData.length) {
+        busStatsList.innerHTML = '<div class="empty-mini-state">Belum ada data bis.</div>';
+        if (busStatsTotals) {
+            busStatsTotals.textContent = 'Tidak ada data bis yang tersedia.';
+        }
+        return;
+    }
+
+    const filtered = getFilteredBusStats();
+    const totals = computeBusTotals(filtered);
+    if (busStatsTotals) {
+        if (filtered.length === 0) {
+            busStatsTotals.textContent = 'Tidak ada bis yang cocok dengan filter.';
+        } else {
+            busStatsTotals.textContent = `Menampilkan ${filtered.length} bis • ${totals.verifiedCount}/${totals.passengerCount} penumpang aktif sudah diverifikasi • ${totals.pendingCount} menunggu`;
+        }
+    }
+
+    if (filtered.length === 0) {
+        busStatsList.innerHTML = '<div class="empty-mini-state">Filter saat ini tidak menemukan bis.</div>';
+        return;
+    }
+
+    busStatsList.innerHTML = filtered.map((entry) => {
+        const percentage = entry.passengerCount > 0 ? Math.min(100, Math.round((entry.verifiedCount / entry.passengerCount) * 100)) : 0;
+        const destinationLabel = entry.destination ? entry.destination : 'Tujuan belum diisi';
+        const routeLabel = entry.route ? entry.route : 'Jurusan belum diisi';
+        const busMetaParts = [destinationLabel, routeLabel].filter(Boolean).join(' • ');
+        const capacityLabel = entry.busCapacity ? `${entry.busCapacity} kursi` : 'Kapasitas ?';
+        return `
+            <div class="bus-stats-card">
+                <div class="bus-stats-header">
+                    <div>
+                        <div class="bus-stats-name">${entry.busCode}</div>
+                        <div class="bus-stats-meta">${busMetaParts || 'Detail rute belum diisi'}</div>
+                    </div>
+                    <div class="status-badge" style="background: rgba(59,130,246,0.12); color: #93c5fd;">${capacityLabel}</div>
+                </div>
+                <div class="bus-stats-meta">
+                    <span>${entry.verifiedCount}/${entry.passengerCount} penumpang aktif</span>
+                    <span>${entry.pendingCount} belum diverifikasi</span>
+                    <span>${entry.registrationsCount} rombongan</span>
+                </div>
+                <div class="bus-stats-progress">
+                    <div class="bus-stats-progress-bar" style="width:${percentage}%"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
 function renderSummary() {
     if (!adminSummaryData) {
         return;
@@ -786,20 +918,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadData() {
     try {
-        const [registrationsResponse, summaryResponse] = await Promise.all([
+        const [registrationsResponse, summaryResponse, busStatsResponse, auditResponse] = await Promise.all([
             fetch('/api/registrations?includeInactive=1'),
             fetch('/api/admin-summary'),
+            fetch('/api/admin/bus-stats'),
+            fetch('/api/admin-audit'),
         ]);
 
         if (!registrationsResponse.ok) throw new Error('Failed to fetch registrations');
         if (!summaryResponse.ok) throw new Error('Failed to fetch admin summary');
+        if (!busStatsResponse.ok) throw new Error('Failed to fetch bus stats');
+        if (!auditResponse.ok) throw new Error('Failed to fetch admin audit');
 
         const rawData: Registration[] = await registrationsResponse.json();
         adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
-        const auditResponse = await fetch('/api/admin-audit');
-        if (!auditResponse.ok) throw new Error('Failed to fetch admin audit');
+        const busStatsPayload = await busStatsResponse.json() as BusStatsResponse;
         const auditPayload = await auditResponse.json() as { entries: AdminAuditEntry[] };
         adminAuditEntries = Array.isArray(auditPayload.entries) ? auditPayload.entries : [];
+        busStatsData = Array.isArray(busStatsPayload.items) ? busStatsPayload.items : [];
 
         registrationsData = rawData;
 
@@ -817,6 +953,8 @@ async function loadData() {
         renderTable();
         renderSummary();
         renderAuditTable();
+        populateBusFilterOptions();
+        renderBusStats();
 
     } catch (err: any) {
         console.error(err);
@@ -1174,4 +1312,3 @@ groupVerifyConfirm.addEventListener('click', async () => {
         showAdminToast(`Gagal verifikasi: ${error.message}`);
     }
 });
-

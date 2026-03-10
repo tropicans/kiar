@@ -7,6 +7,7 @@ import {
   verifyPassengers,
   isConfigured,
   type PassengerData,
+  type RegistrantData,
 } from './api';
 
 // ============================================
@@ -34,6 +35,7 @@ const COMPACT_MODE_KEY = 'qrscan_compact_mode';
 const MAX_HISTORY = 50;
 const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 30000; // 30 seconds
+const REGISTRATION_INFO_HINT = 'Pilih penumpang untuk lihat detail rombongan';
 
 // ============================================
 // State
@@ -52,6 +54,8 @@ let lastVerificationContext: {
   expiresAt: number;
   label: string;
 } | null = null;
+const registrationMetaCache = new Map<string, RegistrantData>();
+let registrationInfoRequestId = 0;
 
 // Rate limiter state
 let loginFailedAttempts = 0;
@@ -129,6 +133,10 @@ const regId = document.getElementById('regId') as HTMLDivElement;
 const regNama = document.getElementById('regNama') as HTMLDivElement;
 const regPhone = document.getElementById('regPhone') as HTMLDivElement;
 const infoGrid = document.querySelector('.info-grid') as HTMLDivElement;
+const regRoute = document.getElementById('regRoute') as HTMLDivElement;
+const regDestination = document.getElementById('regDestination') as HTMLDivElement;
+const regBus = document.getElementById('regBus') as HTMLDivElement;
+const regBusMeta = document.getElementById('regBusMeta') as HTMLDivElement;
 const statusBadge = document.getElementById('statusBadge') as HTMLSpanElement;
 const verifyBtn = document.getElementById('verifyBtn') as HTMLButtonElement;
 const verifyAllBtn = document.getElementById('verifyAllBtn') as HTMLButtonElement;
@@ -230,6 +238,74 @@ function applyCompactMode(enabled: boolean) {
 
 function isAutoScanEnabled(): boolean {
   return autoScanCheck?.checked === true;
+}
+
+function renderRegistrationMeta(data: RegistrantData | null, loading = false) {
+  if (!infoGrid) return;
+  infoGrid.style.display = 'grid';
+
+  if (loading) {
+    regRoute.textContent = 'Memuat detail rombongan...';
+    regDestination.textContent = '—';
+    regBus.textContent = '—';
+    regBusMeta.textContent = '—';
+    return;
+  }
+
+  if (!data) {
+    regRoute.textContent = REGISTRATION_INFO_HINT;
+    regDestination.textContent = '—';
+    regBus.textContent = '—';
+    regBusMeta.textContent = '—';
+    return;
+  }
+
+  regRoute.textContent = data.route || 'Tidak ada jurusan';
+  regDestination.textContent = data.destination || '—';
+  const busLabelParts = [] as string[];
+  if (data.busCode) busLabelParts.push(data.busCode);
+  if (data.busGroup) busLabelParts.push(data.busGroup);
+  regBus.textContent = busLabelParts.length > 0 ? busLabelParts.join(' • ') : 'Tidak ada kode bis';
+
+  const totalPassengers = data.groupSize ?? data.passengers.length;
+  const verifiedCount = data.passengers.filter((p) => p.verified).length;
+  const pendingCount = Math.max(0, totalPassengers - verifiedCount);
+  const capacityText = data.busCapacity ? `${data.busCapacity} kursi` : 'Kapasitas belum diisi';
+  const pendingText = pendingCount > 0 ? `${pendingCount} belum diverifikasi` : 'Semua diverifikasi';
+  regBusMeta.textContent = `Terverifikasi ${verifiedCount}/${totalPassengers} • ${pendingText} • ${capacityText}`;
+}
+
+async function showRegistrationInfoForPassenger(passenger: PassengerData) {
+  if (!passenger.registrationId) {
+    renderRegistrationMeta(null);
+    return;
+  }
+
+  if (registrationMetaCache.has(passenger.registrationId)) {
+    renderRegistrationMeta(registrationMetaCache.get(passenger.registrationId) || null);
+    return;
+  }
+
+  registrationInfoRequestId += 1;
+  const requestId = registrationInfoRequestId;
+  renderRegistrationMeta(null, true);
+
+  try {
+    const lookupResult = await lookupById(passenger.registrationId);
+    if (lookupResult.success && lookupResult.data) {
+      registrationMetaCache.set(passenger.registrationId, lookupResult.data);
+      if (registrationInfoRequestId === requestId) {
+        renderRegistrationMeta(lookupResult.data);
+      }
+      return;
+    }
+  } catch {
+    // ignore network errors here; UI will show default state
+  }
+
+  if (registrationInfoRequestId === requestId) {
+    renderRegistrationMeta(null);
+  }
 }
 
 // ============================================
@@ -998,7 +1074,7 @@ function showVerifyData(passengers: PassengerData[]) {
   verifyLoading.style.display = 'none';
   verifyError.style.display = 'none';
   verifyData.style.display = 'block';
-  infoGrid.style.display = 'none';
+  renderRegistrationMeta(null);
   if (!lastVerificationContext) {
     undoVerifyBar.style.display = 'none';
   }
@@ -1077,10 +1153,11 @@ function showVerifyData(passengers: PassengerData[]) {
           updateSelectAllButtonState();
         }
 
-        previewPassengerSelection(passengerListItems, item, p);
-      });
+      previewPassengerSelection(passengerListItems, item, p);
+      void showRegistrationInfoForPassenger(p);
+    });
 
-      item.appendChild(checkbox);
+    item.appendChild(checkbox);
       item.appendChild(details);
       passengerListItems.appendChild(item);
 
@@ -1089,6 +1166,7 @@ function showVerifyData(passengers: PassengerData[]) {
     // Tampilkan KTP otomatis hanya jika hasil tepat 1 orang
     if (passengers.length === 1 && passengers[0].ktpUrl) {
       loadKtpImage(passengers[0].ktpUrl);
+      void showRegistrationInfoForPassenger(passengers[0]);
     } else {
       loadKtpImage('');
     }

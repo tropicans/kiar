@@ -7,6 +7,12 @@ CREATE TABLE registrations (
     phone_raw VARCHAR(100),
     ktp_url TEXT,
     id_card_url TEXT,
+    jurusan TEXT,
+    kota_tujuan TEXT,
+    kelompok_bis TEXT,
+    bis TEXT,
+    jumlah_orang INTEGER,
+    kapasitas_bis INTEGER,
     active BOOLEAN DEFAULT TRUE,
     last_seen_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
