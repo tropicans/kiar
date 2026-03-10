@@ -1720,23 +1720,23 @@ initTheme();
 updateNetworkStatus();
 renderHistory();
 
-// Google Sign-In: if not logged in, show Google button instead of PIN prompt
+// Google Sign-In: if not logged in, show full-screen overlay
 if (!isLoggedIn()) {
-  // Hide the main app and show lock screen with Google button
-  const lockEl = document.getElementById('lockScreen');
-  if (lockEl) {
-    lockEl.classList.remove('hidden');
-    // Replace PIN form with Google Sign-In
-    const pinForm = lockEl.querySelector('.pin-form');
-    if (pinForm) {
-      pinForm.innerHTML = `
-        <h2 style="color: var(--text-primary); margin-bottom: 8px;">Login dengan Google</h2>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Gunakan akun Google yang sudah didaftarkan</p>
-        <div id="googleSignInBtn" style="display:flex;justify-content:center;"></div>
-        <div id="googleLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
-      `;
-    }
-  }
+  // Create auth overlay
+  const authOverlay = document.createElement('div');
+  authOverlay.id = 'googleAuthOverlay';
+  authOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(10,10,12,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  authOverlay.innerHTML = `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px;width:100%;max-width:360px;text-align:center;">
+      <div style="font-size:40px;margin-bottom:12px;">🎫</div>
+      <h2 style="color:var(--text-primary,#fff);margin-bottom:8px;font-family:'DM Sans',sans-serif;">MUDIK YKSN 2026</h2>
+      <p style="color:var(--text-muted,#888);font-size:14px;margin-bottom:24px;">Login dengan akun Google yang sudah didaftarkan</p>
+      <div id="googleSignInBtn" style="display:flex;justify-content:center;"></div>
+      <div id="googleLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
+    </div>
+  `;
+  document.body.appendChild(authOverlay);
+
   // Wait for GSI to load then render button
   const initGSI = () => {
     if (!(window as any).google?.accounts?.id) {
@@ -1760,12 +1760,10 @@ if (!isLoggedIn()) {
           }
           setSessionToken(data.token);
           setStoredUser({ email: data.email, name: data.name, picture: data.picture, role: data.role, isAdmin: data.isAdmin });
-          // Set staff name from Google account
           currentStaffName = data.name;
           localStorage.setItem('qrscan_active_staff', data.name);
-          // Hide lock screen
-          const lockScreen = document.getElementById('lockScreen');
-          if (lockScreen) lockScreen.classList.add('hidden');
+          // Remove overlay
+          authOverlay.remove();
           updateStaffBadge();
           showToast(`Selamat datang, ${data.name}!`);
           setTimeout(() => focusLookupInput(true), 80);
@@ -1786,16 +1784,13 @@ if (!isLoggedIn()) {
   };
   initGSI();
 } else {
-  // Already logged in — restore user and skip lock screen
+  // Already logged in — restore user
   const user = getStoredUser();
   if (user) {
     currentStaffName = user.name;
     localStorage.setItem('qrscan_active_staff', user.name);
   }
-  const lockEl = document.getElementById('lockScreen');
-  if (lockEl) lockEl.classList.add('hidden');
   updateStaffBadge();
-  initLockScreen();
 }
 
 loadKtpImage('');
