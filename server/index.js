@@ -1478,7 +1478,7 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                       )
                  ) activity
                  ORDER BY verified_at DESC, id DESC
-                 LIMIT 12`
+                 LIMIT 10`
             ),
             pool.query(
                 `WITH hours AS (
