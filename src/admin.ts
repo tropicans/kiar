@@ -196,7 +196,7 @@ let registrationsData: Registration[] = [];
 let filteredData: Registration[] = [];
 let currentPage = 1;
 const ITEMS_PER_PAGE = 20;
-const ADMIN_PIN_KEY = 'qrscan_admin_pin';
+
 let adminSummaryData: AdminSummaryResponse | null = null;
 let adminAuditEntries: AdminAuditEntry[] = [];
 let auditCurrentPage = 1;
@@ -227,22 +227,7 @@ function adminFetch(url: string, options: RequestInit = {}): Promise<Response> {
     return fetch(url, { ...options, headers });
 }
 
-function getStoredAdminPinHash(): string {
-    return localStorage.getItem(ADMIN_PIN_KEY) || '';
-}
 
-async function hashPin(pin: string): Promise<string> {
-    const data = new TextEncoder().encode(pin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function verifyAdminPin(enteredPin: string): Promise<boolean> {
-    const storedHash = getStoredAdminPinHash();
-    if (!storedHash) return false;
-    const enteredHash = await hashPin(enteredPin);
-    return enteredHash === storedHash;
-}
 
 function getRegistrationById(registrationId: string): Registration | undefined {
     return registrationsData.find((item) => item.id === registrationId);
@@ -371,22 +356,7 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
     await loadData();
 }
 
-async function requestAdminPinApproval(targetLabel: string): Promise<boolean> {
-    const storedAdminPinHash = getStoredAdminPinHash();
-    if (!storedAdminPinHash) {
-        throw new Error('Admin PIN belum diatur. Silakan set dulu dari halaman scanner.');
-    }
 
-    const enteredPin = window.prompt(`Masukkan Admin PIN untuk ${targetLabel}:`, '');
-    if (enteredPin === null) return false;
-
-    const isValidPin = await verifyAdminPin(enteredPin.trim());
-    if (!isValidPin) {
-        throw new Error('Admin PIN salah');
-    }
-
-    return true;
-}
 
 async function unverifyRegistration(registrationId: string) {
     const registration = registrationsData.find((item) => item.id === registrationId);
@@ -1633,12 +1603,7 @@ groupVerifyConfirm.addEventListener('click', async () => {
 
     if (selectedIds.length === 0) return;
 
-    // Optional admin pin approval for this step or we could skip it for dashboard verifying.
-    // The requirement didn't explicitly mention admin pin for verification, but if we need to be consistent with unverify, we could do it. 
-    // Wait, the regular scan app doesn't ask for pin again for every verification unless you are the verifier.
-    // Let's ask for the Admin Pin for security (consistent with unverifyRegistration).
-    const approved = await requestAdminPinApproval(`memverifikasi ${selectedIds.length} penumpang`);
-    if (!approved) return;
+    if (!confirm(`Verifikasi ${selectedIds.length} penumpang?`)) return;
 
     try {
         const response = await adminFetch('/api/verify-passengers', {
