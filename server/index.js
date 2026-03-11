@@ -1149,7 +1149,7 @@ app.post('/api/verify-passengers', rateLimit, async (req, res) => {
     }
 });
 
-app.patch('/api/admin/registrations/:id', requireAdminApiKey, rateLimit, async (req, res) => {
+app.patch('/api/admin/registrations/:id', requireAdmin, rateLimit, async (req, res) => {
     try {
         await ensureAdminChangeSchema();
         const registrationId = parsePositiveInt(req.params.id);
@@ -1242,7 +1242,7 @@ app.patch('/api/admin/registrations/:id', requireAdminApiKey, rateLimit, async (
     }
 });
 
-app.patch('/api/admin/passengers/:id', requireAdminApiKey, rateLimit, async (req, res) => {
+app.patch('/api/admin/passengers/:id', requireAdmin, rateLimit, async (req, res) => {
     try {
         await ensureAdminChangeSchema();
         const passengerId = parsePositiveInt(req.params.id);
@@ -1332,7 +1332,7 @@ app.patch('/api/admin/passengers/:id', requireAdminApiKey, rateLimit, async (req
     }
 });
 
-app.post('/api/unverify-passengers', requireAdminApiKey, rateLimit, async (req, res) => {
+app.post('/api/unverify-passengers', requireAdmin, rateLimit, async (req, res) => {
     try {
         await ensureAuditSchema();
         const { passengerIds, verifiedBy, reason } = req.body;
