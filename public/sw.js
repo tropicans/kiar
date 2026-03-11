@@ -41,6 +41,11 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Don't intercept API or upload requests
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) {
+        return;
+    }
+
     event.respondWith(
         fetch(event.request)
             .then((response) => {

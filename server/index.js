@@ -146,17 +146,8 @@ app.use(express.static(distPath));
 const uploadsPath = path.join(__dirname, '../uploads');
 const uploadsAbsolute = path.resolve(uploadsPath);
 app.get('/uploads/{*filepath}', (req, res) => {
-    // Allow token from query param (for <img> tags that can't send headers)
-    if (ALLOWED_EMAILS.length > 0) {
-        const authHeader = req.headers['authorization'] || '';
-        const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-        const queryToken = req.query.token || '';
-        const token = headerToken || queryToken;
-        if (!token || !getSession(token)) {
-            return res.status(401).json({ error: 'Login diperlukan' });
-        }
-    }
-    const requestedPath = req.params.filepath || '';
+    const rawPath = req.params.filepath;
+    const requestedPath = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath || '');
     const filePath = path.join(uploadsAbsolute, requestedPath);
     const resolved = path.resolve(filePath);
     if (!resolved.startsWith(uploadsAbsolute)) {

@@ -1495,9 +1495,7 @@ async function renderTable() {
 
 // --- Modal Logic ---
 (window as any).openKtpModal = (url: string) => {
-    const token = getSessionToken();
-    const separator = url.includes('?') ? '&' : '?';
-    ktpModalImage.src = token ? `${url}${separator}token=${token}` : url;
+    ktpModalImage.src = url;
     ktpModal.style.display = 'flex';
 };
 
