@@ -268,7 +268,6 @@ function closeCrudEditor() {
     crudFieldPrimary.value = '';
     crudFieldSecondary.value = '';
     crudFieldTertiary.value = '';
-    crudAdminPin.value = '';
     crudActiveCheckbox.checked = false;
     hideCrudError();
 }
@@ -290,7 +289,7 @@ function openRegistrationCrudModal(registration: Registration) {
     crudActiveWrap.style.display = 'flex';
     crudActiveCheckbox.checked = registration.active;
     crudActiveLabel.textContent = 'Rombongan aktif';
-    crudAdminPin.value = '';
+
     hideCrudError();
     crudModal.style.display = 'flex';
     window.setTimeout(() => crudFieldPrimary.focus(), 60);
@@ -313,7 +312,7 @@ function openPassengerCrudModal(passenger: Passenger) {
     crudActiveWrap.style.display = 'flex';
     crudActiveCheckbox.checked = passenger.active;
     crudActiveLabel.textContent = 'Penumpang aktif';
-    crudAdminPin.value = '';
+
     hideCrudError();
     crudModal.style.display = 'flex';
     window.setTimeout(() => crudFieldPrimary.focus(), 60);
@@ -321,19 +320,6 @@ function openPassengerCrudModal(passenger: Passenger) {
 
 async function saveCrudModal() {
     if (!crudModalState) return;
-
-    const enteredPin = crudAdminPin.value.trim();
-    if (!enteredPin) {
-        showCrudError('Masukkan Admin PIN.');
-        return;
-    }
-
-    const isValidPin = await verifyAdminPin(enteredPin);
-    if (!isValidPin) {
-        showCrudError('Admin PIN salah.');
-        crudAdminPin.focus();
-        return;
-    }
 
     if (crudModalState.kind === 'registration') {
         await updateRegistration(crudModalState.registrationId, {
@@ -358,8 +344,7 @@ async function saveCrudModal() {
 }
 
 async function unverifyPassenger(passengerId: number, passengerName: string) {
-    const approved = await requestAdminPinApproval(`membatalkan verifikasi ${passengerName}`);
-    if (!approved) return;
+    if (!confirm(`Batalkan verifikasi ${passengerName}?`)) return;
 
     const reason = window.prompt(`Alasan membatalkan verifikasi untuk ${passengerName}:`, 'Salah pilih operator');
     if (reason === null) return;
@@ -417,8 +402,7 @@ async function unverifyRegistration(registrationId: string) {
         throw new Error('Belum ada penumpang terverifikasi di rombongan ini');
     }
 
-    const approved = await requestAdminPinApproval(`membatalkan verifikasi rombongan ${registrationId}`);
-    if (!approved) return;
+    if (!confirm(`Batalkan verifikasi rombongan ${registrationId}?`)) return;
 
     const reason = window.prompt(
         `Alasan membatalkan ${verifiedPassengers.length} verifikasi pada rombongan ${registrationId}:`,
@@ -489,8 +473,7 @@ async function toggleRegistrationActive(registrationId: string) {
     }
 
     const nextActive = !registration.active;
-    const approved = await requestAdminPinApproval(`${nextActive ? 'mengaktifkan' : 'menonaktifkan'} rombongan ${registrationId}`);
-    if (!approved) return;
+    if (!confirm(`${nextActive ? 'Aktifkan' : 'Nonaktifkan'} rombongan ${registrationId}?`)) return;
 
     await updateRegistration(registrationId, { active: nextActive });
 }
@@ -510,8 +493,7 @@ async function togglePassengerActive(passengerId: number) {
     }
 
     const nextActive = !passenger.active;
-    const approved = await requestAdminPinApproval(`${nextActive ? 'mengaktifkan' : 'menonaktifkan'} penumpang ${passenger.nama}`);
-    if (!approved) return;
+    if (!confirm(`${nextActive ? 'Aktifkan' : 'Nonaktifkan'} penumpang ${passenger.nama}?`)) return;
 
     await updatePassenger(passengerId, { active: nextActive });
 }
