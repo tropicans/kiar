@@ -145,7 +145,17 @@ app.use(express.static(distPath));
 // Serve uploaded/static assets (KTP images) — behind auth + path traversal protection
 const uploadsPath = path.join(__dirname, '../uploads');
 const uploadsAbsolute = path.resolve(uploadsPath);
-app.get('/uploads/{*filepath}', requireSession, (req, res) => {
+app.get('/uploads/{*filepath}', (req, res) => {
+    // Allow token from query param (for <img> tags that can't send headers)
+    if (ALLOWED_EMAILS.length > 0) {
+        const authHeader = req.headers['authorization'] || '';
+        const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        const queryToken = req.query.token || '';
+        const token = headerToken || queryToken;
+        if (!token || !getSession(token)) {
+            return res.status(401).json({ error: 'Login diperlukan' });
+        }
+    }
     const requestedPath = req.params.filepath || '';
     const filePath = path.join(uploadsAbsolute, requestedPath);
     const resolved = path.resolve(filePath);
