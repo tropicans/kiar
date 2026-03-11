@@ -146,7 +146,7 @@ const crudFieldTertiaryWrap = document.getElementById('crudFieldTertiaryWrap') a
 const crudActiveWrap = document.getElementById('crudActiveWrap') as HTMLLabelElement;
 const crudActiveCheckbox = document.getElementById('crudActiveCheckbox') as HTMLInputElement;
 const crudActiveLabel = document.getElementById('crudActiveLabel') as HTMLSpanElement;
-const crudAdminPin = document.getElementById('crudAdminPin') as HTMLInputElement;
+
 const crudModalError = document.getElementById('crudModalError') as HTMLDivElement;
 const closeCrudModal = document.getElementById('closeCrudModal') as HTMLButtonElement;
 const crudCancelBtn = document.getElementById('crudCancelBtn') as HTMLButtonElement;
@@ -252,10 +252,7 @@ function getPassengerById(passengerId: number): Passenger | undefined {
     return registrationsData.flatMap((registration) => registration.passengers).find((item) => item.id === passengerId);
 }
 
-function showCrudError(message: string) {
-    crudModalError.textContent = message;
-    crudModalError.style.display = 'block';
-}
+
 
 function hideCrudError() {
     crudModalError.style.display = 'none';
