@@ -10,7 +10,9 @@
     "lint": "tsc --noEmit",
     "deploy": "npm run build && echo 'Build ready in dist/'",
     "dev:up": "docker compose up -d app postgres",
-    "sync:final": "node migration/migrate_mudik.js"
+    "sync:final": "node migration/migrate_mudik.js",
+    "db:backup": "docker exec mudik-db pg_dump -U postgres -d kiar --clean --if-exists > db_backup.sql",
+    "db:restore": "docker exec -i mudik-db psql -U postgres -d kiar < db_backup.sql"
   },
   "devDependencies": {
     "terser": "^5.37.0",
