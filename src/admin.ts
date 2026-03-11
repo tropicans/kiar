@@ -162,6 +162,16 @@ const btnPrevPage = document.getElementById('btnPrevPage') as HTMLButtonElement;
 const btnNextPage = document.getElementById('btnNextPage') as HTMLButtonElement;
 const pageNumbersContainer = document.getElementById('pageNumbersContainer') as HTMLDivElement;
 
+// Audit Pagination Elements
+const auditPagination = document.getElementById('auditPagination') as HTMLDivElement;
+const auditPagStart = document.getElementById('auditPagStart') as HTMLSpanElement;
+const auditPagEnd = document.getElementById('auditPagEnd') as HTMLSpanElement;
+const auditPagTotal = document.getElementById('auditPagTotal') as HTMLSpanElement;
+const btnAuditPrev = document.getElementById('btnAuditPrev') as HTMLButtonElement;
+const btnAuditNext = document.getElementById('btnAuditNext') as HTMLButtonElement;
+const auditPageNumbers = document.getElementById('auditPageNumbers') as HTMLDivElement;
+const tabBadgePeserta = document.getElementById('tabBadgePeserta') as HTMLSpanElement;
+
 // Modal Elements
 const ktpModal = document.getElementById('ktpModal') as HTMLDivElement;
 const ktpModalImage = document.getElementById('ktpModalImage') as HTMLImageElement;
@@ -189,6 +199,8 @@ const ITEMS_PER_PAGE = 20;
 const ADMIN_PIN_KEY = 'qrscan_admin_pin';
 let adminSummaryData: AdminSummaryResponse | null = null;
 let adminAuditEntries: AdminAuditEntry[] = [];
+let auditCurrentPage = 1;
+const AUDIT_PER_PAGE = 20;
 let verificationTrendChart: Chart | null = null;
 let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
 let busStatsData: BusStatsEntry[] = [];
@@ -621,7 +633,9 @@ busStatsExportBtn.addEventListener('click', () => {
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
 crudSaveBtn.addEventListener('click', () => { void saveCrudModal(); });
-auditFilter.addEventListener('change', renderAuditTable);
+auditFilter.addEventListener('change', () => { auditCurrentPage = 1; renderAuditTable(); });
+btnAuditPrev.addEventListener('click', () => { if (auditCurrentPage > 1) { auditCurrentPage--; renderAuditTable(); } });
+btnAuditNext.addEventListener('click', () => { auditCurrentPage++; renderAuditTable(); });
 crudModal.addEventListener('click', (event) => {
     if (event.target === crudModal) {
         closeCrudEditor();
@@ -688,6 +702,7 @@ function updateVisibleCountLabel() {
     const activeCount = registrationsData.filter((reg) => reg.active).length;
     const inactiveCount = registrationsData.length - activeCount;
     totalDataCount.textContent = filteredData.length.toString();
+    tabBadgePeserta.textContent = filteredData.length.toString();
 
     if (activeFilter.value === 'active') {
         totalDataMeta.textContent = `(aktif saja, total aktif ${activeCount})`;
@@ -904,10 +919,18 @@ function renderAuditTable() {
 
     if (visibleEntries.length === 0) {
         auditTableBody.innerHTML = '<tr><td colspan="5" class="loading-state">Belum ada audit admin.</td></tr>';
+        auditPagination.style.display = 'none';
         return;
     }
 
-    auditTableBody.innerHTML = visibleEntries.map((entry) => {
+    const totalPages = Math.ceil(visibleEntries.length / AUDIT_PER_PAGE);
+    if (auditCurrentPage > totalPages) auditCurrentPage = totalPages;
+    if (auditCurrentPage < 1) auditCurrentPage = 1;
+    const startIdx = (auditCurrentPage - 1) * AUDIT_PER_PAGE;
+    const endIdx = Math.min(startIdx + AUDIT_PER_PAGE, visibleEntries.length);
+    const pageEntries = visibleEntries.slice(startIdx, endIdx);
+
+    auditTableBody.innerHTML = pageEntries.map((entry) => {
         const target = entry.entry_type === 'crud'
             ? `${entry.entity_type} ${entry.entity_id}`
             : `${entry.passenger_name || 'Penumpang'}${entry.registration_id ? ` - ${entry.registration_id}` : ''}`;
@@ -925,11 +948,70 @@ function renderAuditTable() {
             </tr>
         `;
     }).join('');
+
+    // Render audit pagination
+    if (visibleEntries.length > AUDIT_PER_PAGE) {
+        auditPagination.style.display = 'flex';
+        auditPagStart.textContent = String(startIdx + 1);
+        auditPagEnd.textContent = String(endIdx);
+        auditPagTotal.textContent = String(visibleEntries.length);
+        btnAuditPrev.disabled = auditCurrentPage <= 1;
+        btnAuditNext.disabled = auditCurrentPage >= totalPages;
+
+        // Page number buttons
+        let pageHtml = '';
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === auditCurrentPage) {
+                pageHtml += `<button class="btn-secondary-admin page-btn active" style="padding:6px 12px;min-width:unset;background:var(--accent-gradient);color:#fff;border:none;">${i}</button>`;
+            } else if (i === 1 || i === totalPages || Math.abs(i - auditCurrentPage) <= 1) {
+                pageHtml += `<button class="btn-secondary-admin page-btn audit-page-num" data-page="${i}" style="padding:6px 12px;min-width:unset;">${i}</button>`;
+            } else if (Math.abs(i - auditCurrentPage) === 2) {
+                pageHtml += `<span style="color:var(--text-muted);">…</span>`;
+            }
+        }
+        auditPageNumbers.innerHTML = pageHtml;
+        auditPageNumbers.querySelectorAll('.audit-page-num').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                auditCurrentPage = Number((btn as HTMLElement).dataset.page);
+                renderAuditTable();
+            });
+        });
+    } else {
+        auditPagination.style.display = 'none';
+    }
+}
+
+// --- Tab Switching ---
+function initTabs() {
+    const tabBar = document.getElementById('adminTabs');
+    if (!tabBar) return;
+    const tabs = tabBar.querySelectorAll<HTMLButtonElement>('.admin-tab');
+    const panels = document.querySelectorAll<HTMLDivElement>('.tab-panel');
+
+    function switchTab(tabName: string) {
+        tabs.forEach((t) => t.classList.toggle('active', t.dataset.tab === tabName));
+        panels.forEach((p) => p.classList.toggle('active', p.dataset.tab === tabName));
+        sessionStorage.setItem('adminActiveTab', tabName);
+    }
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            const name = tab.dataset.tab;
+            if (name) switchTab(name);
+        });
+    });
+
+    // Restore last active tab
+    const saved = sessionStorage.getItem('adminActiveTab');
+    if (saved && tabBar.querySelector(`[data-tab="${saved}"]`)) {
+        switchTab(saved);
+    }
 }
 
 // Check secure session access set by main app
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initTabs();
 
     const token = getSessionToken();
     if (!token) {
@@ -939,17 +1021,89 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.className = 'auth-overlay';
         overlay.innerHTML = `
             <div class="auth-container">
-                <h2 style="color: var(--text-primary); margin-bottom: 8px;">Admin Dashboard</h2>
-                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Login dengan akun Google admin</p>
-                <div id="adminGoogleBtn" style="display:flex;justify-content:center;"></div>
-                <div id="adminLoginError" style="color:#fda4af;font-size:13px;margin-top:12px;display:none;"></div>
-                <a href="/" style="display:block;margin-top:16px;color:var(--text-muted);font-size:13px;">← Kembali ke Scanner</a>
+                <div class="auth-logo">
+                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="4.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
+                        <rect x="27" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="29.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
+                        <rect x="2" y="27" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="4.5" y="29.5" width="6" height="6" rx="1" fill="currentColor" />
+                    </svg>
+                    <h2>MUDIK YKSN 2026</h2>
+                </div>
+                <div class="auth-badge">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                    Admin Dashboard
+                </div>
+                <p class="auth-subtitle">Login dengan akun Google yang telah<br>didaftarkan sebagai admin</p>
+                <div id="adminGoogleBtn" class="auth-btn-wrap"></div>
+                <div id="adminLoginError" class="auth-error" style="display:none;"></div>
+                <div class="auth-divider">atau</div>
+                <a href="/" class="auth-back">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+                    </svg>
+                    Kembali ke Scanner
+                </a>
+                <p class="auth-hint">Hubungi super admin untuk mendapatkan akses</p>
             </div>
         `;
         document.body.appendChild(overlay);
 
+        let adminGsiRetries = 0;
+        const ADMIN_GSI_MAX_RETRIES = 25;
+
+        const showAdminFallbackBtn = () => {
+            const btnEl = document.getElementById('adminGoogleBtn');
+            if (!btnEl) return;
+            btnEl.innerHTML = `
+                <button id="adminFallbackGoogleBtn" style="
+                    display: inline-flex; align-items: center; gap: 10px;
+                    padding: 12px 24px; border-radius: 8px;
+                    background: #4285f4; color: white; border: none;
+                    font-size: 15px; font-weight: 600; cursor: pointer;
+                    font-family: var(--font); transition: background 0.2s;
+                ">
+                    <svg width="20" height="20" viewBox="0 0 48 48">
+                        <path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/>
+                    </svg>
+                    Sign in with Google
+                </button>
+                <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">Google SDK gagal dimuat. Klik untuk mencoba ulang.</p>
+            `;
+            const fallbackBtn = document.getElementById('adminFallbackGoogleBtn');
+            if (fallbackBtn) {
+                fallbackBtn.addEventListener('click', () => {
+                    btnEl.innerHTML = '<div class="loading-spinner small" style="margin:12px auto;"></div>';
+                    const script = document.createElement('script');
+                    script.src = 'https://accounts.google.com/gsi/client';
+                    script.onload = () => {
+                        adminGsiRetries = 0;
+                        initGSI();
+                    };
+                    script.onerror = () => {
+                        btnEl.innerHTML = '<p style="color:#fda4af;font-size:13px;">Gagal memuat Google Sign-In. Periksa koneksi internet lalu <a href="javascript:location.reload()" style="color:#93c5fd;">muat ulang halaman</a>.</p>';
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+        };
+
         const initGSI = () => {
-            if (!(window as any).google?.accounts?.id) { setTimeout(initGSI, 200); return; }
+            if (!(window as any).google?.accounts?.id) {
+                adminGsiRetries++;
+                if (adminGsiRetries >= ADMIN_GSI_MAX_RETRIES) {
+                    console.warn('Google Sign-In SDK gagal dimuat, menampilkan tombol fallback');
+                    showAdminFallbackBtn();
+                    return;
+                }
+                setTimeout(initGSI, 200);
+                return;
+            }
             (window as any).google.accounts.id.initialize({
                 client_id: '262804834085-jlrslmph5ghovf6ufq796gre8uuoq1ci.apps.googleusercontent.com',
                 callback: async (response: any) => {
@@ -971,9 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         localStorage.setItem(SESSION_KEY, data.token);
                         localStorage.setItem('authUser', JSON.stringify(data));
-                        overlay.remove();
-                        dashboardContent.style.display = 'block';
-                        loadData();
+                        location.reload();
                     } catch (err: any) {
                         if (errorEl) { errorEl.style.display = 'block'; errorEl.textContent = err.message; }
                     }
@@ -987,6 +1139,147 @@ document.addEventListener('DOMContentLoaded', () => {
         initGSI();
         return;
     }
+
+    // Admin header logout button
+    const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    adminLogoutBtn?.addEventListener('click', () => {
+        localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem('authUser');
+        location.reload();
+    });
+
+    // --- User Management (superadmin only) ---
+    const authUserStr = localStorage.getItem('authUser');
+    const authUser = authUserStr ? JSON.parse(authUserStr) : null;
+    const isSuperAdmin = authUser?.role === 'superadmin';
+    const tabUsersBtn = document.getElementById('tabUsers');
+    const userTableBody = document.getElementById('userTableBody') as HTMLTableSectionElement;
+    const newUserEmail = document.getElementById('newUserEmail') as HTMLInputElement;
+    const newUserRole = document.getElementById('newUserRole') as HTMLSelectElement;
+    const btnAddUser = document.getElementById('btnAddUser') as HTMLButtonElement;
+    let usersLoaded = false;
+
+    if (isSuperAdmin && tabUsersBtn) {
+        tabUsersBtn.style.display = 'inline-flex';
+    }
+
+    async function loadUsers() {
+        if (!isSuperAdmin || !userTableBody) return;
+        userTableBody.innerHTML = '<tr><td colspan="5" class="loading-state">Memuat user...</td></tr>';
+        try {
+            const res = await adminFetch('/api/admin/users');
+            if (!res.ok) throw new Error('Gagal memuat data user');
+            const data = await res.json();
+            renderUsers(data.users || []);
+        } catch (err: any) {
+            userTableBody.innerHTML = `<tr><td colspan="5" class="loading-state" style="color:#fda4af;">${err.message}</td></tr>`;
+        }
+    }
+
+    function renderUsers(users: any[]) {
+        if (!userTableBody) return;
+        if (users.length === 0) {
+            userTableBody.innerHTML = '<tr><td colspan="5" class="loading-state">Belum ada user.</td></tr>';
+            return;
+        }
+        userTableBody.innerHTML = users.map((user: any) => {
+            const isSA = user.role === 'superadmin';
+            const roleBadge = `<span class="role-badge ${user.role}">${user.role}</span>`;
+            const statusDot = `<span class="user-status-dot ${user.active ? 'active' : 'inactive'}"></span>${user.active ? 'Aktif' : 'Nonaktif'}`;
+            const createdAt = user.created_at ? new Date(user.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+            const actions = isSA
+                ? '<span style="color:var(--text-muted);font-size:0.72rem;">Protected</span>'
+                : `<div class="user-actions" style="justify-content:flex-end;">
+                    <button class="user-toggle-role" data-id="${user.id}" data-role="${user.role}">${user.role === 'admin' ? '→ Operator' : '→ Admin'}</button>
+                    <button class="user-toggle-active" data-id="${user.id}" data-active="${user.active}">${user.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                    <button class="danger user-delete" data-id="${user.id}" data-email="${user.email}">Hapus</button>
+                   </div>`;
+            return `<tr>
+                <td>${user.email}</td>
+                <td>${roleBadge}</td>
+                <td>${statusDot}</td>
+                <td>${createdAt}</td>
+                <td style="text-align:right;">${actions}</td>
+            </tr>`;
+        }).join('');
+
+        // Wire up action buttons
+        userTableBody.querySelectorAll('.user-toggle-role').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const id = (btn as HTMLElement).dataset.id;
+                const currentRole = (btn as HTMLElement).dataset.role;
+                const newRole = currentRole === 'admin' ? 'operator' : 'admin';
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role: newRole }),
+                    });
+                    if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+                    showAdminToast(`Role diubah ke ${newRole}`);
+                    loadUsers();
+                } catch (err: any) { showAdminToast(err.message); }
+            });
+        });
+
+        userTableBody.querySelectorAll('.user-toggle-active').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const id = (btn as HTMLElement).dataset.id;
+                const isActive = (btn as HTMLElement).dataset.active === 'true';
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ active: !isActive }),
+                    });
+                    if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+                    showAdminToast(isActive ? 'User dinonaktifkan' : 'User diaktifkan');
+                    loadUsers();
+                } catch (err: any) { showAdminToast(err.message); }
+            });
+        });
+
+        userTableBody.querySelectorAll('.user-delete').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const id = (btn as HTMLElement).dataset.id;
+                const email = (btn as HTMLElement).dataset.email;
+                if (!confirm(`Hapus user ${email}? Tindakan ini tidak dapat dibatalkan.`)) return;
+                try {
+                    const res = await adminFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+                    if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+                    showAdminToast('User dihapus');
+                    loadUsers();
+                } catch (err: any) { showAdminToast(err.message); }
+            });
+        });
+    }
+
+    // Add user handler
+    if (btnAddUser) {
+        btnAddUser.addEventListener('click', async () => {
+            const email = newUserEmail?.value?.trim();
+            const role = newUserRole?.value;
+            if (!email) { showAdminToast('Email tidak boleh kosong'); return; }
+            try {
+                const res = await adminFetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, role }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                showAdminToast(data.message || 'User ditambahkan');
+                newUserEmail.value = '';
+                loadUsers();
+            } catch (err: any) { showAdminToast(err.message); }
+        });
+    }
+
+    // Load users when tab is first clicked
+    const tabBar = document.getElementById('adminTabs');
+    tabBar?.querySelector('[data-tab="users"]')?.addEventListener('click', () => {
+        if (!usersLoaded) { usersLoaded = true; loadUsers(); }
+    });
 
     dashboardContent.style.display = 'block';
     loadData();
@@ -1387,197 +1680,4 @@ groupVerifyConfirm.addEventListener('click', async () => {
         console.error(error);
         showAdminToast(`Gagal verifikasi: ${error.message}`);
     }
-});
-
-// ============================================
-// User Management (Superadmin Only)
-// ============================================
-
-interface AppUser {
-    id: number;
-    email: string;
-    role: string;
-    active: boolean;
-    created_at: string;
-}
-
-async function initUserManagement() {
-    const user = JSON.parse(localStorage.getItem('authUser') || 'null');
-    if (!user || user.role !== 'superadmin') return;
-
-    // Create user management section
-    const container = document.createElement('div');
-    container.id = 'userManagementSection';
-    container.innerHTML = `
-        <div style="margin-top:32px;padding:24px;background:var(--card-bg, rgba(255,255,255,0.03));border:1px solid var(--border-color, rgba(255,255,255,0.1));border-radius:16px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                <h3 style="margin:0;font-size:18px;color:var(--text-primary,#fff);">👥 Kelola Pengguna</h3>
-                <button id="userLogoutBtn" style="padding:8px 16px;background:#e74c3c;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">Logout</button>
-            </div>
-            <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
-                <input type="email" id="newUserEmail" placeholder="email@gmail.com" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid var(--border-color,rgba(255,255,255,0.15));border-radius:10px;background:var(--input-bg,rgba(255,255,255,0.05));color:var(--text-primary,#fff);font-size:14px;" />
-                <select id="newUserRole" style="padding:10px 14px;border:1px solid var(--border-color,rgba(255,255,255,0.15));border-radius:10px;background:var(--input-bg,rgba(255,255,255,0.05));color:var(--text-primary,#fff);font-size:14px;">
-                    <option value="operator">Operator</option>
-                    <option value="admin">Admin</option>
-                </select>
-                <button id="addUserBtn" style="padding:10px 20px;background:var(--primary,#22c55e);color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">+ Tambah</button>
-            </div>
-            <div id="userTableContainer" style="overflow-x:auto;"></div>
-        </div>
-    `;
-
-    // Find document body or dashboard
-    const dashboard = document.querySelector('.admin-content, .dashboard-grid, main') || document.body;
-    dashboard.appendChild(container);
-
-    // Wire up events
-    document.getElementById('addUserBtn')!.addEventListener('click', addUser);
-    document.getElementById('userLogoutBtn')!.addEventListener('click', () => {
-        if (confirm('Logout dari akun ini?')) {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('authUser');
-            window.location.reload();
-        }
-    });
-
-    await loadUsers();
-}
-
-async function loadUsers() {
-    const tableContainer = document.getElementById('userTableContainer');
-    if (!tableContainer) return;
-
-    try {
-        const res = await adminFetch('/api/admin/users');
-        if (!res.ok) throw new Error('Gagal memuat daftar pengguna');
-        const data = await res.json();
-        const users: AppUser[] = data.users;
-
-        const roleLabels: Record<string, string> = { superadmin: '🔑 Super Admin', admin: '🛡️ Admin', operator: '👤 Operator' };
-        const roleColors: Record<string, string> = { superadmin: '#f59e0b', admin: '#3b82f6', operator: '#22c55e' };
-
-        tableContainer.innerHTML = `
-            <table style="width:100%;border-collapse:collapse;font-size:14px;">
-                <thead>
-                    <tr style="border-bottom:1px solid var(--border-color,rgba(255,255,255,0.1));">
-                        <th style="text-align:left;padding:10px 8px;color:var(--text-muted,#888);">Email</th>
-                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Role</th>
-                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Status</th>
-                        <th style="text-align:center;padding:10px 8px;color:var(--text-muted,#888);">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${users.map(u => `
-                        <tr style="border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));" data-user-id="${u.id}">
-                            <td style="padding:10px 8px;color:var(--text-primary,#fff);">${u.email}</td>
-                            <td style="text-align:center;padding:10px 8px;">
-                                ${u.role === 'superadmin'
-                ? `<span style="color:${roleColors[u.role]};font-weight:600;">${roleLabels[u.role]}</span>`
-                : `<select class="user-role-select" data-id="${u.id}" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border-color,rgba(255,255,255,0.15));background:var(--input-bg,rgba(255,255,255,0.05));color:${roleColors[u.role]};font-size:13px;">
-                                        <option value="operator" ${u.role === 'operator' ? 'selected' : ''}>👤 Operator</option>
-                                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>🛡️ Admin</option>
-                                    </select>`
-            }
-                            </td>
-                            <td style="text-align:center;padding:10px 8px;">
-                                ${u.role === 'superadmin'
-                ? '<span style="color:#22c55e;">Aktif</span>'
-                : `<button class="user-toggle-btn" data-id="${u.id}" data-active="${u.active}" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;background:${u.active ? '#22c55e22' : '#ef444422'};color:${u.active ? '#22c55e' : '#ef4444'};">${u.active ? 'Aktif' : 'Nonaktif'}</button>`
-            }
-                            </td>
-                            <td style="text-align:center;padding:10px 8px;">
-                                ${u.role === 'superadmin' ? '—' : `<button class="user-delete-btn" data-id="${u.id}" data-email="${u.email}" style="padding:4px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;background:#ef444422;color:#ef4444;">Hapus</button>`}
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-
-        // Wire up role change
-        tableContainer.querySelectorAll('.user-role-select').forEach(sel => {
-            sel.addEventListener('change', async (e) => {
-                const target = e.target as HTMLSelectElement;
-                const id = target.dataset.id;
-                const role = target.value;
-                try {
-                    const res = await adminFetch(`/api/admin/users/${id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ role }),
-                    });
-                    if (!res.ok) throw new Error((await res.json()).error);
-                    showAdminToast('Role diperbarui');
-                    await loadUsers();
-                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
-            });
-        });
-
-        // Wire up toggle active
-        tableContainer.querySelectorAll('.user-toggle-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = (btn as HTMLElement).dataset.id;
-                const currentActive = (btn as HTMLElement).dataset.active === 'true';
-                try {
-                    const res = await adminFetch(`/api/admin/users/${id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ active: !currentActive }),
-                    });
-                    if (!res.ok) throw new Error((await res.json()).error);
-                    showAdminToast(currentActive ? 'User dinonaktifkan' : 'User diaktifkan');
-                    await loadUsers();
-                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
-            });
-        });
-
-        // Wire up delete
-        tableContainer.querySelectorAll('.user-delete-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = (btn as HTMLElement).dataset.id;
-                const email = (btn as HTMLElement).dataset.email;
-                if (!confirm(`Hapus user ${email}?`)) return;
-                try {
-                    const res = await adminFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-                    if (!res.ok) throw new Error((await res.json()).error);
-                    showAdminToast('User dihapus');
-                    await loadUsers();
-                } catch (err: any) { showAdminToast(`Gagal: ${err.message}`); }
-            });
-        });
-
-    } catch (err: any) {
-        tableContainer.innerHTML = `<p style="color:#ef4444;">Gagal memuat pengguna: ${err.message}</p>`;
-    }
-}
-
-async function addUser() {
-    const emailInput = document.getElementById('newUserEmail') as HTMLInputElement;
-    const roleSelect = document.getElementById('newUserRole') as HTMLSelectElement;
-    const email = emailInput.value.trim();
-    const role = roleSelect.value;
-
-    if (!email) { showAdminToast('Email wajib diisi'); return; }
-    if (!email.includes('@')) { showAdminToast('Format email tidak valid'); return; }
-
-    try {
-        const res = await adminFetch('/api/admin/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, role }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        showAdminToast(data.message || `${email} ditambahkan`);
-        emailInput.value = '';
-        await loadUsers();
-    } catch (err: any) {
-        showAdminToast(`Gagal: ${err.message}`);
-    }
-}
-
-// Initialize user management after login
-document.addEventListener('DOMContentLoaded', () => {
-    // Delay to let main DOMContentLoaded run first
-    setTimeout(() => initUserManagement(), 500);
 });

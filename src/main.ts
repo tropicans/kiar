@@ -207,12 +207,12 @@ const adminPinSubmit = document.getElementById('adminPinSubmit') as HTMLButtonEl
 const closeAdminPin = document.getElementById('closeAdminPin') as HTMLButtonElement;
 
 // Settings
-const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement;
+const settingsBtn = document.getElementById('settingsBtn') as HTMLButtonElement | null;
 const settingsModal = document.getElementById('settingsModal') as HTMLDivElement;
 const closeSettings = document.getElementById('closeSettings') as HTMLButtonElement;
-const settingsPin = document.getElementById('settingsPin') as HTMLInputElement;
-const settingsAdminPin = document.getElementById('settingsAdminPin') as HTMLInputElement;
-const saveSettingsBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement;
+const settingsPin = document.getElementById('settingsPin') as HTMLInputElement | null;
+const settingsAdminPin = document.getElementById('settingsAdminPin') as HTMLInputElement | null;
+const saveSettingsBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement | null;
 const btnOpenAdminDashboard = document.getElementById('btnOpenAdminDashboard') as HTMLButtonElement;
 
 // Others
@@ -514,8 +514,8 @@ function openSettings() {
 }
 
 function showSettingsModal() {
-  settingsPin.value = '';
-  settingsAdminPin.value = '';
+  if (settingsPin) settingsPin.value = '';
+  if (settingsAdminPin) settingsAdminPin.value = '';
   settingsModal.style.display = 'flex';
 }
 
@@ -577,14 +577,14 @@ async function handleSaveSettings() {
 
 
   // Save Login PIN (hashed)
-  const pin = settingsPin.value.trim();
+  const pin = settingsPin?.value.trim() ?? '';
   if (pin) {
     const pinHash = await hashPin(pin);
     localStorage.setItem(PIN_KEY, pinHash);
   }
 
   // Save Admin PIN (hashed) — only update if user typed something
-  const adminPin = settingsAdminPin.value.trim();
+  const adminPin = settingsAdminPin?.value.trim() ?? '';
   if (adminPin) {
     if (adminPin.length < 4) {
       showToast('Admin PIN minimal 4 digit');
@@ -1551,9 +1551,9 @@ adminPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handle
 adminPinModal.addEventListener('click', (e) => { if (e.target === adminPinModal) closeAdminPinModal(); });
 
 // Settings
-settingsBtn.addEventListener('click', openSettings);
+settingsBtn?.addEventListener('click', openSettings);
 closeSettings.addEventListener('click', closeSettingsModal);
-saveSettingsBtn.addEventListener('click', handleSaveSettings);
+saveSettingsBtn?.addEventListener('click', handleSaveSettings);
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettingsModal(); });
 
 btnOpenAdminDashboard?.addEventListener('click', () => {
@@ -1651,9 +1651,55 @@ renderHistory();
 if (!isLoggedIn()) {
   lockScreen.classList.remove('hidden');
 
-  // Wait for GSI to load then render button
+  // Wait for GSI to load then render button (with fallback)
+  let gsiRetries = 0;
+  const GSI_MAX_RETRIES = 25; // ~5 seconds
+
+  const showFallbackLoginButton = () => {
+    const btnEl = document.getElementById('googleSignInBtn');
+    if (!btnEl) return;
+    btnEl.innerHTML = `
+      <button id="fallbackGoogleBtn" style="
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 12px 24px; border-radius: 8px;
+        background: #4285f4; color: white; border: none;
+        font-size: 15px; font-weight: 600; cursor: pointer;
+        font-family: var(--font); transition: background 0.2s;
+      ">
+        <svg width="20" height="20" viewBox="0 0 48 48">
+          <path fill="#fff" d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/>
+        </svg>
+        Sign in with Google
+      </button>
+      <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">Google SDK gagal dimuat. Klik untuk mencoba ulang.</p>
+    `;
+    const fallbackBtn = document.getElementById('fallbackGoogleBtn');
+    if (fallbackBtn) {
+      fallbackBtn.addEventListener('click', () => {
+        btnEl.innerHTML = '<div class="loading-spinner small" style="margin:12px auto;"></div>';
+        // Re-inject GSI script
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.onload = () => {
+          gsiRetries = 0;
+          initGSI();
+        };
+        script.onerror = () => {
+          btnEl.innerHTML = '<p style="color:#fda4af;font-size:13px;">Gagal memuat Google Sign-In. Periksa koneksi internet lalu <a href="javascript:location.reload()" style="color:#93c5fd;">muat ulang halaman</a>.</p>';
+        };
+        document.head.appendChild(script);
+      });
+    }
+  };
+
   const initGSI = () => {
     if (!(window as any).google?.accounts?.id) {
+      gsiRetries++;
+      if (gsiRetries >= GSI_MAX_RETRIES) {
+        console.warn('Google Sign-In SDK gagal dimuat, menampilkan tombol fallback');
+        showFallbackLoginButton();
+        return;
+      }
       setTimeout(initGSI, 200);
       return;
     }

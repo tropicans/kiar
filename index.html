@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="MUDIK YKSN 2026" />
   <!-- Security -->
   <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <!-- X-Frame-Options enforced via Nginx HTTP header (not supported in meta) -->
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <!-- CSP enforced via Nginx security-headers.conf in production (not meta tag, to avoid breaking Vite dev server) -->
   <!-- Open Graph -->

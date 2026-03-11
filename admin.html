@@ -481,30 +481,126 @@
             }
         }
 
-        /* Authentication overlay uses existing styles from index.html -> #settingsPinModal */
+        /* Authentication overlay */
         .auth-overlay {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(10, 10, 12, 0.95);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            background: var(--bg-primary);
             z-index: 9999;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 20px;
         }
 
         .auth-container {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 32px;
             width: 100%;
-            max-width: 400px;
+            max-width: 380px;
             text-align: center;
+        }
+
+        .auth-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            color: var(--accent-light);
+        }
+
+        .auth-logo svg {
+            width: 36px;
+            height: 36px;
+        }
+
+        .auth-logo h2 {
+            font-size: clamp(1.2rem, 5vw, 1.4rem);
+            font-weight: 800;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .auth-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: 100px;
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        .auth-subtitle {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+            margin-bottom: 28px;
+            line-height: 1.5;
+        }
+
+        .auth-btn-wrap {
+            display: flex;
+            justify-content: center;
+            min-height: 44px;
+            margin-bottom: 16px;
+        }
+
+        .auth-error {
+            color: #fda4af;
+            font-size: 13px;
+            margin-top: 12px;
+            font-weight: 500;
+        }
+
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 20px 0;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+        }
+
+        .auth-divider::before,
+        .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-glass);
+        }
+
+        .auth-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .auth-back:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .auth-hint {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            opacity: 0.6;
+            margin-top: 24px;
         }
 
         .bus-stats-panel {
@@ -637,6 +733,212 @@
                 max-width: none;
             }
         }
+
+        /* ===== Tab Navigation ===== */
+        .admin-tabs {
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 14px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+
+        .admin-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .admin-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .admin-tab:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .admin-tab.active {
+            background: var(--accent-gradient);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        }
+
+        .admin-tab svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .tab-badge {
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 1px 7px;
+            border-radius: 100px;
+            background: rgba(255, 255, 255, 0.15);
+            min-width: 18px;
+            text-align: center;
+        }
+
+        .admin-tab.active .tab-badge {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* ===== User Management ===== */
+        .user-mgmt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .user-add-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .user-add-form input,
+        .user-add-form select {
+            font-family: var(--font);
+            font-size: 0.85rem;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-primary);
+        }
+
+        .user-add-form input { min-width: 220px; }
+
+        .user-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .user-table th {
+            text-align: left;
+            padding: 10px 14px;
+            color: var(--text-muted);
+            font-weight: 700;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .user-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            vertical-align: middle;
+        }
+
+        .user-table tr:hover td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 100px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .role-badge.operator { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .role-badge.admin { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+        .role-badge.superadmin { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+        .user-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .user-status-dot.active { background: #4ade80; }
+        .user-status-dot.inactive { background: #ef4444; }
+
+        .user-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .user-actions button {
+            padding: 5px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            font-family: var(--font);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .user-actions button:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .user-actions button.danger:hover {
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.3);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* ===== Audit Pagination ===== */
+        .audit-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-glass);
+        }
+
+        .audit-pagination .pagination-info {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .audit-pagination .pagination-buttons {
+            display: flex;
+            gap: 6px;
+        }
     </style>
 </head>
 
@@ -664,6 +966,11 @@
                     <h1>MUDIK YKSN 2026</h1>
                 </div>
                 <div class="header-right">
+                    <!-- Network Status -->
+                    <div class="network-status" id="networkStatus" title="Online">
+                        <span class="network-dot online"></span>
+                        <span class="network-label" id="networkLabel">Online</span>
+                    </div>
                     <!-- Theme Toggle -->
                     <button id="themeToggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
                         <svg class="icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -683,11 +990,23 @@
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                         </svg>
                     </button>
-                    <!-- Network Status -->
-                    <div class="network-status" id="networkStatus" title="Online">
-                        <span class="network-dot online"></span>
-                        <span class="network-label" id="networkLabel">Online</span>
-                    </div>
+                    <!-- Back to Scanner -->
+                    <a href="/" class="icon-btn" title="Buka Scanner" aria-label="Buka Scanner"
+                        style="text-decoration:none;color:inherit;">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="4" y1="6" x2="20" y2="6" />
+                            <line x1="4" y1="12" x2="20" y2="12" />
+                            <line x1="4" y1="18" x2="14" y2="18" />
+                        </svg>
+                    </a>
+                    <!-- Logout Button -->
+                    <button id="adminLogoutBtn" class="icon-btn" title="Logout" aria-label="Logout">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                            <polyline points="16 17 21 12 16 7" />
+                            <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                    </button>
                 </div>
             </div>
         </header>
@@ -697,248 +1016,343 @@
             style="max-width: 1200px; width: 100%; min-width: 0; padding: 0 16px; box-sizing: border-box;">
             <!-- Main Dashboard -->
             <div class="dashboard-container" id="dashboardContent">
-                <section class="summary-grid" id="summaryGrid">
-                    <article class="summary-card">
-                        <div class="summary-label">Total Rombongan</div>
-                        <div class="summary-value" id="summaryRegistrations">0</div>
-                        <div class="summary-meta" id="summaryRegistrationMeta">Memuat data...</div>
-                    </article>
-                    <article class="summary-card">
-                        <div class="summary-label">Total Penumpang</div>
-                        <div class="summary-value" id="summaryPassengers">0</div>
-                        <div class="summary-meta" id="summaryPassengerMeta">Memuat data...</div>
-                    </article>
-                    <article class="summary-card">
-                        <div class="summary-label">Sudah Verifikasi</div>
-                        <div class="summary-value" id="summaryVerified">0</div>
-                        <div class="summary-meta" id="summaryVerifiedMeta">Memuat data...</div>
-                    </article>
-                    <article class="summary-card">
-                        <div class="summary-label">Belum Verifikasi</div>
-                        <div class="summary-value" id="summaryPending">0</div>
-                        <div class="summary-meta" id="summaryPendingMeta">Memuat data...</div>
-                    </article>
-                </section>
+                <!-- Tab Navigation -->
+                <nav class="admin-tabs" id="adminTabs">
+                    <button class="admin-tab active" data-tab="ringkasan">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                        Ringkasan
+                    </button>
+                    <button class="admin-tab" data-tab="peserta">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Data Peserta
+                        <span class="tab-badge" id="tabBadgePeserta">0</span>
+                    </button>
+                    <button class="admin-tab" data-tab="bus">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="7.5" cy="21" r="1.5"/><circle cx="16.5" cy="21" r="1.5"/><line x1="7.5" y1="17" x2="7.5" y2="19.5"/><line x1="16.5" y1="17" x2="16.5" y2="19.5"/></svg>
+                        Statistik Bis
+                    </button>
+                    <button class="admin-tab" data-tab="audit">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Audit
+                    </button>
+                    <button class="admin-tab" data-tab="users" id="tabUsers" style="display:none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                        Kelola User
+                    </button>
+                </nav>
 
-                <section class="summary-panels">
-                    <article class="summary-panel">
-                        <div class="panel-header">
-                            <div>
-                                <div class="panel-title">Tren Verifikasi</div>
-                                <div class="panel-subtitle">Aktivitas verify dan batalkan dalam 12 jam terakhir</div>
-                            </div>
-                        </div>
-                        <div class="chart-wrap">
-                            <canvas id="verificationTrendChart"></canvas>
-                        </div>
-                    </article>
+                <!-- TAB 1: Ringkasan -->
+                <div class="tab-panel active" data-tab="ringkasan">
+                    <section class="summary-grid" id="summaryGrid">
+                        <article class="summary-card">
+                            <div class="summary-label">Total Rombongan</div>
+                            <div class="summary-value" id="summaryRegistrations">0</div>
+                            <div class="summary-meta" id="summaryRegistrationMeta">Memuat data...</div>
+                        </article>
+                        <article class="summary-card">
+                            <div class="summary-label">Total Penumpang</div>
+                            <div class="summary-value" id="summaryPassengers">0</div>
+                            <div class="summary-meta" id="summaryPassengerMeta">Memuat data...</div>
+                        </article>
+                        <article class="summary-card">
+                            <div class="summary-label">Sudah Verifikasi</div>
+                            <div class="summary-value" id="summaryVerified">0</div>
+                            <div class="summary-meta" id="summaryVerifiedMeta">Memuat data...</div>
+                        </article>
+                        <article class="summary-card">
+                            <div class="summary-label">Belum Verifikasi</div>
+                            <div class="summary-value" id="summaryPending">0</div>
+                            <div class="summary-meta" id="summaryPendingMeta">Memuat data...</div>
+                        </article>
+                    </section>
 
-                    <div class="summary-side-grid">
+                    <section class="summary-panels">
                         <article class="summary-panel">
                             <div class="panel-header">
                                 <div>
-                                    <div class="panel-title">Top Petugas</div>
-                                    <div class="panel-subtitle">Peringkat operator berdasarkan jumlah verifikasi</div>
+                                    <div class="panel-title">Tren Verifikasi</div>
+                                    <div class="panel-subtitle">Aktivitas verify dan batalkan dalam 12 jam terakhir</div>
                                 </div>
                             </div>
-                            <div class="leaderboard-list" id="topVerifiersList">
-                                <div class="empty-mini-state">Belum ada aktivitas verifikasi.</div>
+                            <div class="chart-wrap">
+                                <canvas id="verificationTrendChart"></canvas>
                             </div>
                         </article>
 
-                        <article class="summary-panel">
-                            <div class="panel-header">
-                                <div>
-                                    <div class="panel-title">Aktivitas Terakhir</div>
-                                    <div class="panel-subtitle">Riwayat verify dan batalkan terbaru</div>
+                        <div class="summary-side-grid">
+                            <article class="summary-panel">
+                                <div class="panel-header">
+                                    <div>
+                                        <div class="panel-title">Top Petugas</div>
+                                        <div class="panel-subtitle">Peringkat operator berdasarkan jumlah verifikasi</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="activity-list" id="recentActivityList">
-                                <div class="empty-mini-state">Belum ada aktivitas untuk ditampilkan.</div>
-                            </div>
-                        </article>
-                    </div>
-                </section>
+                                <div class="leaderboard-list" id="topVerifiersList">
+                                    <div class="empty-mini-state">Belum ada aktivitas verifikasi.</div>
+                                </div>
+                            </article>
 
-                <section class="summary-panel bus-stats-panel">
-                    <div class="panel-header">
-                        <div>
-                            <div class="panel-title">Statistik Bis</div>
-                            <div class="panel-subtitle">Pantau keterisian dan progres verifikasi tiap bis</div>
+                            <article class="summary-panel">
+                                <div class="panel-header">
+                                    <div>
+                                        <div class="panel-title">Aktivitas Terakhir</div>
+                                        <div class="panel-subtitle">Riwayat verify dan batalkan terbaru</div>
+                                    </div>
+                                </div>
+                                <div class="activity-list" id="recentActivityList">
+                                    <div class="empty-mini-state">Belum ada aktivitas untuk ditampilkan.</div>
+                                </div>
+                            </article>
                         </div>
-                        <div class="bus-stats-controls">
-                            <select id="busFilterSelect" class="admin-filter-select" style="min-width: 160px;">
-                                <option value="">Semua Bis</option>
-                            </select>
-                            <select id="busStatusFilter" class="admin-filter-select" style="min-width: 180px;">
-                                <option value="all">Semua Status</option>
-                                <option value="complete">Sudah Terpenuhi</option>
-                                <option value="pending">Masih Pending</option>
-                            </select>
-                            <button id="busStatsExportBtn" class="btn-secondary-admin" type="button" style="gap:6px;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M12 5v14" />
-                                    <path d="M19 12l-7 7-7-7" />
+                    </section>
+                </div>
+
+                <!-- TAB 2: Data Peserta -->
+                <div class="tab-panel" data-tab="peserta">
+                    <div class="header-actions">
+                        <div class="header-primary">
+                            <h1 class="header-title">Dashboard Verifikasi Peserta</h1>
+                            <p
+                                style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
+                                Tampil: <span id="totalDataCount">0</span> rombongan <span id="totalDataMeta">(aktif
+                                    saja)</span>
+                            </p>
+                        </div>
+
+                        <div class="header-toolbar">
+                            <div class="scanner-shortcut">
+                                <strong>Workflow utama</strong>
+                                <span>Kembali ke Scanner untuk verifikasi lapangan</span>
+                            </div>
+
+                            <button id="btnBackToHome" class="btn-secondary-admin"
+                                style="border-color: rgba(74, 222, 128, 0.26);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                                    <polyline points="12 19 5 12 12 5"></polyline>
                                 </svg>
-                                Export CSV
+                                <span class="btn-text">Kembali ke Scanner</span>
                             </button>
                         </div>
                     </div>
-                    <div class="bus-stats-totals" id="busStatsTotals">Memuat statistik bis...</div>
-                    <div class="bus-stats-list" id="busStatsList">
-                        <div class="empty-mini-state">Memuat data bis...</div>
-                    </div>
-                </section>
 
-                <div class="header-actions">
-                    <div class="header-primary">
-                        <h1 class="header-title">Dashboard Verifikasi Peserta</h1>
-                        <p
-                            style="color: var(--text-muted); font-family: 'Inter', sans-serif; font-size: 14px; margin-top: 4px;">
-                            Tampil: <span id="totalDataCount">0</span> rombongan <span id="totalDataMeta">(aktif
-                                saja)</span>
-                        </p>
-                    </div>
-
-                    <div class="header-toolbar">
-                        <div class="scanner-shortcut">
-                            <strong>Workflow utama</strong>
-                            <span>Kembali ke Scanner untuk verifikasi lapangan</span>
+                    <div class="header-actions" style="align-items:center; margin-bottom: 16px;">
+                        <div class="admin-search-container" style="flex: 1; min-width: 280px; max-width: 460px;">
+                            <div class="search-input-wrapper" style="position: relative; width: 100%;">
+                                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
+                                    stroke-width="2"
+                                    style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" id="searchInput" class="settings-input admin-search-input"
+                                    placeholder="Cari ID, Nama, No WA..." autocomplete="off"
+                                    style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
+                            </div>
                         </div>
-
-                        <button id="btnBackToHome" class="btn-secondary-admin"
-                            style="border-color: rgba(74, 222, 128, 0.26);">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="19" y1="12" x2="5" y2="12"></line>
-                                <polyline points="12 19 5 12 12 5"></polyline>
-                            </svg>
-                            <span class="btn-text">Kembali ke Scanner</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="header-actions" style="align-items:center; margin-bottom: 16px;">
-                    <div class="admin-search-container" style="flex: 1; min-width: 280px; max-width: 460px;">
-                        <div class="search-input-wrapper" style="position: relative; width: 100%;">
-                            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
-                                stroke-width="2"
-                                style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px;">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            <input type="text" id="searchInput" class="settings-input admin-search-input"
-                                placeholder="Cari ID, Nama, No WA..." autocomplete="off"
-                                style="width: 100%; padding-left: 48px; border-radius: 12px; height: 48px;">
+                        <div
+                            style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--text-muted); font-size: 13px;">
+                            <span>Default tampilan: data aktif</span>
+                            <span>Gunakan filter untuk melihat data lama/nonaktif</span>
                         </div>
                     </div>
-                    <div
-                        style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--text-muted); font-size: 13px;">
-                        <span>Default tampilan: data aktif</span>
-                        <span>Gunakan filter untuk melihat data lama/nonaktif</span>
-                    </div>
-                </div>
 
-                <div class="admin-filter-row">
-                    <div style="color: var(--text-muted); font-size: 13px; font-weight: 700;">Filter data:</div>
-                    <select id="statusFilter" class="admin-filter-select">
-                        <option value="all">Semua Status Verifikasi</option>
-                        <option value="verified">Ada yang verified</option>
-                        <option value="pending">Belum ada verified</option>
-                    </select>
-                    <select id="activeFilter" class="admin-filter-select">
-                        <option value="active">Hanya aktif</option>
-                        <option value="all">Semua Status Aktif</option>
-                        <option value="inactive">Termasuk nonaktif</option>
-                        <option value="only-inactive">Hanya nonaktif</option>
-                    </select>
-                </div>
-
-                <section class="audit-section">
-                    <div class="panel-header">
-                        <div>
-                            <div class="panel-title">Audit Admin</div>
-                            <div class="panel-subtitle">Riwayat perubahan CRUD dan pembatalan verifikasi terbaru</div>
-                        </div>
-                        <div class="admin-filter-row" style="margin:0; justify-content:flex-end;">
-                            <select id="auditFilter" class="admin-filter-select" style="min-width: 220px;">
-                                <option value="all">Semua Audit</option>
-                                <option value="crud">Hanya CRUD</option>
-                                <option value="verification">Hanya Verifikasi</option>
-                                <option value="unverify">Hanya Batalkan Verifikasi</option>
-                                <option value="toggle_active">Hanya Toggle Aktif</option>
-                                <option value="update">Hanya Update Data</option>
-                            </select>
-                        </div>
+                    <div class="admin-filter-row">
+                        <div style="color: var(--text-muted); font-size: 13px; font-weight: 700;">Filter data:</div>
+                        <select id="statusFilter" class="admin-filter-select">
+                            <option value="all">Semua Status Verifikasi</option>
+                            <option value="verified">Ada yang verified</option>
+                            <option value="pending">Belum ada verified</option>
+                        </select>
+                        <select id="activeFilter" class="admin-filter-select">
+                            <option value="active">Hanya aktif</option>
+                            <option value="all">Semua Status Aktif</option>
+                            <option value="inactive">Termasuk nonaktif</option>
+                            <option value="only-inactive">Hanya nonaktif</option>
+                        </select>
                     </div>
+
                     <div class="data-table-wrapper">
-                        <table class="audit-table">
-                            <thead>
+                        <table class="data-table">
+                            <thead
+                                style="position: sticky; top: 0; z-index: 10; background: var(--bg-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
                                 <tr>
-                                    <th>Waktu</th>
-                                    <th>Tipe</th>
-                                    <th>Target</th>
-                                    <th>Perubahan</th>
-                                    <th>Pelaku</th>
+                                    <th style="width: 50px;">No</th>
+                                    <th style="width: 140px;">ID Pendaftar</th>
+                                    <th style="width: 140px;">No WhatsApp</th>
+                                    <th>Daftar Penumpang</th>
+                                    <th style="width: 120px; text-align: center;">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody id="auditTableBody">
+                            <tbody id="tableBody">
                                 <tr>
-                                    <td colspan="5" class="loading-state">Memuat audit...</td>
+                                    <td colspan="5" class="loading-state">
+                                        <div class="spinner"></div>
+                                        Memuat data...
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                </section>
 
-                <div class="data-table-wrapper">
-                    <table class="data-table">
-                        <thead
-                            style="position: sticky; top: 0; z-index: 10; background: var(--bg-primary); box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
-                            <tr>
-                                <th style="width: 50px;">No</th>
-                                <th style="width: 140px;">ID Pendaftar</th>
-                                <th style="width: 140px;">No WhatsApp</th>
-                                <th>Daftar Penumpang</th>
-                                <th style="width: 120px; text-align: center;">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody">
-                            <tr>
-                                <td colspan="5" class="loading-state">
-                                    <div class="spinner"></div>
-                                    Memuat data...
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <!-- Pagination Controls -->
+                    <div class="admin-pagination" id="paginationControls"
+                        style="display: none; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-glass);">
+                        <div class="pagination-info" style="color: var(--text-muted); font-size: 14px;">
+                            Menampilkan <span id="pagStart">0</span> - <span id="pagEnd">0</span> dari <span
+                                id="pagTotal">0</span> data
+                        </div>
+                        <div class="pagination-buttons" style="display: flex; gap: 8px;">
+                            <button id="btnPrevPage" class="btn-secondary-admin page-btn"
+                                style="padding: 8px 16px; min-width: unset;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                            </button>
+                            <div id="pageNumbersContainer" style="display: flex; gap: 6px; align-items: center;"></div>
+                            <button id="btnNextPage" class="btn-secondary-admin page-btn"
+                                style="padding: 8px 16px; min-width: unset;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Pagination Controls -->
-                <div class="admin-pagination" id="paginationControls"
-                    style="display: none; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-glass);">
-                    <div class="pagination-info" style="color: var(--text-muted); font-size: 14px;">
-                        Menampilkan <span id="pagStart">0</span> - <span id="pagEnd">0</span> dari <span
-                            id="pagTotal">0</span> data
-                    </div>
-                    <div class="pagination-buttons" style="display: flex; gap: 8px;">
-                        <button id="btnPrevPage" class="btn-secondary-admin page-btn"
-                            style="padding: 8px 16px; min-width: unset;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="15 18 9 12 15 6"></polyline>
-                            </svg>
-                        </button>
-                        <div id="pageNumbersContainer" style="display: flex; gap: 6px; align-items: center;"></div>
-                        <button id="btnNextPage" class="btn-secondary-admin page-btn"
-                            style="padding: 8px 16px; min-width: unset;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="9 18 15 12 9 6"></polyline>
-                            </svg>
-                        </button>
-                    </div>
+                <!-- TAB 3: Statistik Bis -->
+                <div class="tab-panel" data-tab="bus">
+                    <section class="summary-panel bus-stats-panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">Statistik Bis</div>
+                                <div class="panel-subtitle">Pantau keterisian dan progres verifikasi tiap bis</div>
+                            </div>
+                            <div class="bus-stats-controls">
+                                <select id="busFilterSelect" class="admin-filter-select" style="min-width: 160px;">
+                                    <option value="">Semua Bis</option>
+                                </select>
+                                <select id="busStatusFilter" class="admin-filter-select" style="min-width: 180px;">
+                                    <option value="all">Semua Status</option>
+                                    <option value="complete">Sudah Terpenuhi</option>
+                                    <option value="pending">Masih Pending</option>
+                                </select>
+                                <button id="busStatsExportBtn" class="btn-secondary-admin" type="button" style="gap:6px;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M12 5v14" />
+                                        <path d="M19 12l-7 7-7-7" />
+                                    </svg>
+                                    Export CSV
+                                </button>
+                            </div>
+                        </div>
+                        <div class="bus-stats-totals" id="busStatsTotals">Memuat statistik bis...</div>
+                        <div class="bus-stats-list" id="busStatsList">
+                            <div class="empty-mini-state">Memuat data bis...</div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- TAB 4: Audit -->
+                <div class="tab-panel" data-tab="audit">
+                    <section class="audit-section">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">Audit Admin</div>
+                                <div class="panel-subtitle">Riwayat perubahan CRUD dan pembatalan verifikasi terbaru</div>
+                            </div>
+                            <div class="admin-filter-row" style="margin:0; justify-content:flex-end;">
+                                <select id="auditFilter" class="admin-filter-select" style="min-width: 220px;">
+                                    <option value="all">Semua Audit</option>
+                                    <option value="crud">Hanya CRUD</option>
+                                    <option value="verification">Hanya Verifikasi</option>
+                                    <option value="unverify">Hanya Batalkan Verifikasi</option>
+                                    <option value="toggle_active">Hanya Toggle Aktif</option>
+                                    <option value="update">Hanya Update Data</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="data-table-wrapper">
+                            <table class="audit-table">
+                                <thead>
+                                    <tr>
+                                        <th>Waktu</th>
+                                        <th>Tipe</th>
+                                        <th>Target</th>
+                                        <th>Perubahan</th>
+                                        <th>Pelaku</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="auditTableBody">
+                                    <tr>
+                                        <td colspan="5" class="loading-state">Memuat audit...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Audit Pagination -->
+                        <div class="audit-pagination" id="auditPagination" style="display:none;">
+                            <div class="pagination-info">
+                                Menampilkan <span id="auditPagStart">0</span> - <span id="auditPagEnd">0</span> dari <span id="auditPagTotal">0</span> data
+                            </div>
+                            <div class="pagination-buttons">
+                                <button id="btnAuditPrev" class="btn-secondary-admin page-btn" style="padding: 8px 16px; min-width: unset;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                </button>
+                                <div id="auditPageNumbers" style="display: flex; gap: 6px; align-items: center;"></div>
+                                <button id="btnAuditNext" class="btn-secondary-admin page-btn" style="padding: 8px 16px; min-width: unset;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- TAB 5: Kelola User (superadmin only) -->
+                <div class="tab-panel" data-tab="users">
+                    <section class="summary-panel">
+                        <div class="user-mgmt-header">
+                            <div>
+                                <div class="panel-title">Kelola User</div>
+                                <div class="panel-subtitle">Tambah, ubah role, atau nonaktifkan akun operator/admin</div>
+                            </div>
+                        </div>
+
+                        <div class="user-add-form" id="userAddForm">
+                            <input type="email" id="newUserEmail" placeholder="Email Google user" autocomplete="off">
+                            <select id="newUserRole">
+                                <option value="operator">Operator</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <button id="btnAddUser" class="btn-secondary-admin" style="padding:10px 18px; gap:6px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Tambah
+                            </button>
+                        </div>
+
+                        <div style="margin-top:20px;">
+                            <div class="data-table-wrapper">
+                                <table class="user-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Email</th>
+                                            <th>Role</th>
+                                            <th>Status</th>
+                                            <th>Dibuat</th>
+                                            <th style="text-align:right;">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="userTableBody">
+                                        <tr><td colspan="5" class="loading-state">Memuat user...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
         </main>
