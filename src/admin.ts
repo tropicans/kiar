@@ -633,9 +633,9 @@ busStatsExportBtn.addEventListener('click', () => {
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
 crudSaveBtn.addEventListener('click', () => { void saveCrudModal(); });
-auditFilter.addEventListener('change', () => { auditCurrentPage = 1; renderAuditTable(); });
-btnAuditPrev.addEventListener('click', () => { if (auditCurrentPage > 1) { auditCurrentPage--; renderAuditTable(); } });
-btnAuditNext.addEventListener('click', () => { auditCurrentPage++; renderAuditTable(); });
+auditFilter?.addEventListener('change', () => { auditCurrentPage = 1; renderAuditTable(); });
+btnAuditPrev?.addEventListener('click', () => { if (auditCurrentPage > 1) { auditCurrentPage--; renderAuditTable(); } });
+btnAuditNext?.addEventListener('click', () => { auditCurrentPage++; renderAuditTable(); });
 crudModal.addEventListener('click', (event) => {
     if (event.target === crudModal) {
         closeCrudEditor();
@@ -702,7 +702,7 @@ function updateVisibleCountLabel() {
     const activeCount = registrationsData.filter((reg) => reg.active).length;
     const inactiveCount = registrationsData.length - activeCount;
     totalDataCount.textContent = filteredData.length.toString();
-    tabBadgePeserta.textContent = filteredData.length.toString();
+    if (tabBadgePeserta) tabBadgePeserta.textContent = filteredData.length.toString();
 
     if (activeFilter.value === 'active') {
         totalDataMeta.textContent = `(aktif saja, total aktif ${activeCount})`;
@@ -906,6 +906,7 @@ function renderSummary() {
 }
 
 function renderAuditTable() {
+    if (!auditFilter || !auditTableBody) return;
     const filterMode = auditFilter.value;
     const visibleEntries = adminAuditEntries.filter((entry) => {
         if (filterMode === 'all') return true;
