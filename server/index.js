@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -13,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(compression());
 const port = process.env.PORT || 8080;
 const API_JSON_LIMIT = process.env.API_JSON_LIMIT || '256kb';
 const MAX_BULK_IDS = Math.min(Math.max(parseInt(process.env.API_MAX_BULK_IDS || '200', 10) || 200, 1), 1000);

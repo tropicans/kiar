@@ -12,7 +12,8 @@
     "dev:up": "docker compose up -d app postgres",
     "sync:final": "node migration/migrate_mudik.js",
     "db:backup": "docker exec mudik-db pg_dump -U postgres -d kiar --clean --if-exists > db_backup.sql",
-    "db:restore": "docker exec -i mudik-db psql -U postgres -d kiar < db_backup.sql"
+    "db:restore": "docker exec -i mudik-db psql -U postgres -d kiar < db_backup.sql",
+    "compress:uploads": "node scripts/compress-uploads.js"
   },
   "devDependencies": {
     "terser": "^5.37.0",
@@ -22,10 +23,12 @@
   "dependencies": {
     "axios": "^1.13.5",
     "chart.js": "^4.5.1",
+    "compression": "^1.8.1",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "google-auth-library": "^10.6.1",
-    "pg": "^8.18.0"
+    "pg": "^8.18.0",
+    "sharp": "^0.34.5"
   }
 }
