@@ -195,7 +195,7 @@ const busStatsExportBtn = document.getElementById('busStatsExportBtn') as HTMLBu
 let registrationsData: Registration[] = [];
 let filteredData: Registration[] = [];
 let currentPage = 1;
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 10;
 
 let adminSummaryData: AdminSummaryResponse | null = null;
 let adminAuditEntries: AdminAuditEntry[] = [];
