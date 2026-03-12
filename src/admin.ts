@@ -972,14 +972,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.innerHTML = `
             <div class="auth-container">
                 <div class="auth-logo">
-                    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
-                        <rect x="4.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
-                        <rect x="27" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
-                        <rect x="29.5" y="4.5" width="6" height="6" rx="1" fill="currentColor" />
-                        <rect x="2" y="27" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2" />
-                        <rect x="4.5" y="29.5" width="6" height="6" rx="1" fill="currentColor" />
-                    </svg>
+                    <img src="/logo.png" alt="Logo" class="auth-logo-img" />
                     <h2>MUDIK YKSN 2026</h2>
                 </div>
                 <div class="auth-badge">
