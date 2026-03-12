@@ -34,6 +34,7 @@ CREATE TABLE passengers (
     nama_normalized VARCHAR(255),
     is_registrant BOOLEAN DEFAULT FALSE,
     nik VARCHAR(50),
+    nik_suffix VARCHAR(6),
     ktp_url TEXT,
     verified BOOLEAN DEFAULT FALSE,
     verified_at TIMESTAMP,
@@ -72,6 +73,7 @@ CREATE TABLE admin_change_logs (
 CREATE INDEX passenger_verifications_passenger_idx ON passenger_verifications (passenger_id, verified_at DESC, id DESC);
 CREATE INDEX passengers_nama_normalized_idx ON passengers (nama_normalized) WHERE COALESCE(active, TRUE) = TRUE;
 CREATE INDEX passengers_nik_idx ON passengers (nik) WHERE COALESCE(active, TRUE) = TRUE AND nik IS NOT NULL;
+CREATE INDEX idx_passengers_nik_suffix ON passengers (nik_suffix) WHERE nik_suffix IS NOT NULL AND COALESCE(active, TRUE) = TRUE;
 
 CREATE TABLE sync_runs (
     id BIGSERIAL PRIMARY KEY,

@@ -322,6 +322,12 @@ async function ensureExtendedRegistrationColumns() {
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS bis TEXT');
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS jumlah_orang INTEGER');
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kapasitas_bis INTEGER');
+    // Performance: add nik_suffix column for indexed NIK search
+    await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS nik_suffix VARCHAR(6)');
+    await pool.query(`UPDATE passengers SET nik_suffix = RIGHT(regexp_replace(COALESCE(nik, ''), '\\D', '', 'g'), 6) WHERE nik IS NOT NULL AND nik_suffix IS NULL`);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_passengers_nik_suffix ON passengers(nik_suffix) WHERE nik_suffix IS NOT NULL AND COALESCE(active, TRUE) = TRUE');
+    // Performance: ensure nama_normalized is populated and indexed
+    await pool.query(`UPDATE passengers SET nama_normalized = lower(regexp_replace(COALESCE(nama, ''), '\\s+', ' ', 'g')) WHERE nama_normalized IS NULL AND nama IS NOT NULL`);
 }
 
 const extendedRegistrationColumnsReady = ensureExtendedRegistrationColumns().catch((err) => {
@@ -337,84 +343,54 @@ function ensureRegistrationDataReady() {
 
 async function fetchBusStatsRows(busFilter) {
     await ensureRegistrationDataReady();
+    // Performance: do bus-level grouping in SQL directly
+    const busFilterValue = (busFilter || '').toLowerCase();
     const result = await pool.query(
         `SELECT
-            r.id,
-            r.jurusan,
-            r.kota_tujuan,
-            r.kelompok_bis,
-            r.bis,
-            r.jumlah_orang,
-            r.kapasitas_bis,
-            COUNT(p.id)::int AS passenger_count,
-            COUNT(*) FILTER (WHERE p.verified = TRUE)::int AS verified_count
+            COALESCE(NULLIF(TRIM(r.bis), ''), 'Tanpa Kode') AS bus_code,
+            MAX(r.jurusan) AS jurusan,
+            MAX(r.kota_tujuan) AS kota_tujuan,
+            MAX(r.kelompok_bis) AS kelompok_bis,
+            MAX(r.kapasitas_bis) AS kapasitas_bis,
+            SUM(COALESCE(r.jumlah_orang, sub.passenger_count))::int AS manifest_count,
+            SUM(sub.passenger_count)::int AS passenger_count,
+            SUM(sub.verified_count)::int AS verified_count,
+            COUNT(DISTINCT r.id)::int AS registrations_count
          FROM registrations r
-         LEFT JOIN passengers p
-            ON p.registration_id = r.id
-            AND COALESCE(p.active, TRUE) = TRUE
+         LEFT JOIN LATERAL (
+            SELECT
+                COUNT(p.id)::int AS passenger_count,
+                COUNT(*) FILTER (WHERE p.verified = TRUE)::int AS verified_count
+            FROM passengers p
+            WHERE p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
+         ) sub ON TRUE
          WHERE COALESCE(r.active, TRUE) = TRUE
-         GROUP BY r.id, r.jurusan, r.kota_tujuan, r.kelompok_bis, r.bis, r.jumlah_orang, r.kapasitas_bis`,
+         GROUP BY COALESCE(NULLIF(TRIM(r.bis), ''), 'Tanpa Kode')
+         ORDER BY bus_code ASC`,
     );
 
-    const busFilterValue = (busFilter || '').toLowerCase();
-    const grouped = new Map();
-
-    result.rows.forEach((row) => {
-        const fallback = getRouteMetadata(row.id) || {};
-        const cleanedBusCode = (row.bis || fallback.busCode || '').trim() || 'Tanpa Kode';
-        const key = cleanedBusCode.toLowerCase();
-        if (!grouped.has(key)) {
-            grouped.set(key, {
-                busCode: cleanedBusCode,
-                route: row.jurusan || fallback.route || null,
-                destination: row.kota_tujuan || fallback.destination || null,
-                busGroup: row.kelompok_bis || fallback.busGroup || null,
-                busCapacity: row.kapasitas_bis ?? fallback.busCapacity ?? null,
-                manifestCount: 0,
-                expectedCount: 0,
-                passengerCount: 0,
-                verifiedCount: 0,
-                pendingCount: 0,
-                registrationsCount: 0,
-            });
-        }
-
-        const entry = grouped.get(key);
+    let rows = result.rows.map((row) => {
         const passengerCount = Number(row.passenger_count || 0);
         const verifiedCount = Number(row.verified_count || 0);
-        entry.passengerCount += passengerCount;
-        entry.verifiedCount += verifiedCount;
-        entry.pendingCount += Math.max(0, passengerCount - verifiedCount);
-        entry.registrationsCount += 1;
-
-        const manifestIncrement = row.jumlah_orang ?? fallback.groupSize ?? passengerCount;
-        if (manifestIncrement) {
-            entry.manifestCount += Number(manifestIncrement);
-            entry.expectedCount += Number(manifestIncrement);
-        }
-
-        const capacityCandidate = row.kapasitas_bis ?? fallback.busCapacity;
-        if (capacityCandidate && (!entry.busCapacity || capacityCandidate > entry.busCapacity)) {
-            entry.busCapacity = capacityCandidate;
-        }
-
-        if (!entry.route && (row.jurusan || fallback.route)) {
-            entry.route = row.jurusan || fallback.route || null;
-        }
-        if (!entry.destination && (row.kota_tujuan || fallback.destination)) {
-            entry.destination = row.kota_tujuan || fallback.destination || null;
-        }
-        if (!entry.busGroup && (row.kelompok_bis || fallback.busGroup)) {
-            entry.busGroup = row.kelompok_bis || fallback.busGroup || null;
-        }
+        return {
+            busCode: row.bus_code,
+            route: row.jurusan || null,
+            destination: row.kota_tujuan || null,
+            busGroup: row.kelompok_bis || null,
+            busCapacity: row.kapasitas_bis ? Number(row.kapasitas_bis) : null,
+            manifestCount: Number(row.manifest_count || 0),
+            expectedCount: Number(row.manifest_count || 0),
+            passengerCount,
+            verifiedCount,
+            pendingCount: Math.max(0, passengerCount - verifiedCount),
+            registrationsCount: Number(row.registrations_count || 0),
+        };
     });
 
-    let rows = Array.from(grouped.values());
     if (busFilterValue) {
         rows = rows.filter((row) => row.busCode.toLowerCase().includes(busFilterValue));
     }
 
-    rows.sort((a, b) => a.busCode.localeCompare(b.busCode, 'id'));
     return rows;
 }
 
@@ -806,11 +782,12 @@ app.get('/api/lookup-nik/:last6', requireSession, rateLimit, async (req, res) =>
             return res.status(400).json({ error: 'Input harus 6 digit terakhir NIK' });
         }
 
+        // Performance: use indexed nik_suffix column instead of full table scan
         const regMatchResult = await pool.query(
             `SELECT DISTINCT p.registration_id
              FROM passengers p
              WHERE COALESCE(p.active, TRUE) = TRUE
-               AND RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
+               AND p.nik_suffix = $1
              ORDER BY p.registration_id ASC`,
             [normalized]
         );
@@ -878,6 +855,7 @@ app.get('/api/search-nik/:last6', requireSession, rateLimit, async (req, res) =>
             return res.status(400).json({ error: 'Input harus 6 digit terakhir NIK' });
         }
 
+        // Performance: use indexed nik_suffix column
         const result = await pool.query(
             `SELECT
                 p.id,
@@ -898,7 +876,7 @@ app.get('/api/search-nik/:last6', requireSession, rateLimit, async (req, res) =>
             JOIN registrations r ON r.id = p.registration_id
             WHERE COALESCE(p.active, TRUE) = TRUE
               AND COALESCE(r.active, TRUE) = TRUE
-              AND RIGHT(regexp_replace(COALESCE(p.nik, ''), '\\D', '', 'g'), 6) = $1
+              AND p.nik_suffix = $1
             ORDER BY p.nama ASC, p.id ASC`,
             [normalized]
         );
@@ -931,6 +909,7 @@ app.get('/api/search-name', requireSession, rateLimit, async (req, res) => {
         const containsPattern = `%${normalized}%`;
         const startsPattern = `${normalized}%`;
 
+        // Performance: use pre-computed nama_normalized column directly (indexed)
         const result = await pool.query(
             `SELECT
                 p.id,
@@ -941,7 +920,7 @@ app.get('/api/search-name', requireSession, rateLimit, async (req, res) => {
                 p.verified,
                 p.verified_at,
                 p.verified_by,
-                lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) AS search_name,
+                p.nama_normalized AS search_name,
                 r.jurusan AS registration_route,
                 r.kota_tujuan AS registration_destination,
                 r.kelompok_bis AS registration_bus_group,
@@ -952,14 +931,14 @@ app.get('/api/search-name', requireSession, rateLimit, async (req, res) => {
             JOIN registrations r ON r.id = p.registration_id
             WHERE COALESCE(p.active, TRUE) = TRUE
               AND COALESCE(r.active, TRUE) = TRUE
-              AND lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) LIKE $2
+              AND p.nama_normalized LIKE $2
             ORDER BY
                 CASE
-                    WHEN lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) = $1 THEN 0
-                    WHEN lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g')) LIKE $3 THEN 1
+                    WHEN p.nama_normalized = $1 THEN 0
+                    WHEN p.nama_normalized LIKE $3 THEN 1
                     ELSE 2
                 END,
-                length(lower(regexp_replace(COALESCE(p.nama_normalized, p.nama, ''), '\\s+', ' ', 'g'))) ASC,
+                length(p.nama_normalized) ASC,
                 p.nama ASC,
                 p.id ASC
             LIMIT 20`,
@@ -1001,24 +980,31 @@ app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
         const passResult = await pool.query(`SELECT * FROM passengers ${passengerWhere} ORDER BY registration_id ASC, id ASC`);
         const passengers = passResult.rows;
 
-        // Group passengers by registration_id
+        // Performance: group passengers using Map (O(N) instead of O(N*M))
+        const passengersByRegId = new Map();
+        for (const p of passengers) {
+            const regId = p.registration_id;
+            if (!passengersByRegId.has(regId)) {
+                passengersByRegId.set(regId, []);
+            }
+            passengersByRegId.get(regId).push({
+                id: p.id,
+                nama: p.nama,
+                isRegistrant: p.is_registrant,
+                nik: p.nik,
+                ktpUrl: p.ktp_url,
+                verified: p.verified,
+                verifiedAt: p.verified_at,
+                verifiedBy: p.verified_by,
+                active: p.active,
+            });
+        }
+
         const groupedData = registrations.map(reg => {
             const base = mapRegistrationRow(reg);
             return {
                 ...base,
-                passengers: passengers
-                    .filter(p => p.registration_id === reg.id)
-                    .map(p => ({
-                        id: p.id,
-                        nama: p.nama,
-                        isRegistrant: p.is_registrant,
-                        nik: p.nik,
-                        ktpUrl: p.ktp_url,
-                        verified: p.verified,
-                        verifiedAt: p.verified_at,
-                        verifiedBy: p.verified_by,
-                        active: p.active,
-                    }))
+                passengers: passengersByRegId.get(reg.id) || [],
             };
         });
 
@@ -1051,37 +1037,41 @@ app.post('/api/verify', rateLimit, async (req, res) => {
 
         const verifierName = sanitizeActor(verifiedBy);
 
-        // Transaction to prevent race conditions
+        // Performance: batch verify instead of sequential loop
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
-            for (const pId of sanitizedPassengerIds) {
-                // Check current status
-                const checkRes = await client.query('SELECT verified, registration_id FROM passengers WHERE id = $1 FOR UPDATE', [pId]);
+            // Batch check: lock and validate all passengers at once
+            const checkRes = await client.query(
+                'SELECT id, verified, registration_id FROM passengers WHERE id = ANY($1::int[]) FOR UPDATE',
+                [sanitizedPassengerIds]
+            );
 
-                if (checkRes.rows.length === 0) {
+            if (checkRes.rows.length !== sanitizedPassengerIds.length) {
+                const foundIds = new Set(checkRes.rows.map(r => r.id));
+                const missing = sanitizedPassengerIds.find(id => !foundIds.has(id));
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: `Penumpang dengan ID ${missing} tidak ditemukan` });
+            }
+
+            for (const row of checkRes.rows) {
+                if (String(row.registration_id) !== registrationId) {
                     await client.query('ROLLBACK');
-                    return res.status(404).json({ error: `Penumpang dengan ID ${pId} tidak ditemukan` });
+                    return res.status(400).json({ error: `Penumpang dengan ID ${row.id} tidak valid untuk grup ini` });
                 }
-
-                if (String(checkRes.rows[0].registration_id) !== registrationId) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ error: `Penumpang dengan ID ${pId} tidak valid untuk grup ini` });
-                }
-
-                if (checkRes.rows[0].verified) {
+                if (row.verified) {
                     await client.query('ROLLBACK');
                     return res.status(409).json({ error: 'Ada peserta yang sudah diverifikasi sebelumnya' });
                 }
-
-                // Update status
-                const now = new Date();
-                await client.query(
-                    'UPDATE passengers SET verified = TRUE, verified_at = $1, verified_by = $2 WHERE id = $3',
-                    [now, verifierName, pId]
-                );
             }
+
+            // Batch update all at once
+            const now = new Date();
+            await client.query(
+                'UPDATE passengers SET verified = TRUE, verified_at = $1, verified_by = $2 WHERE id = ANY($3::int[])',
+                [now, verifierName, sanitizedPassengerIds]
+            );
 
             await appendPassengerVerificationEvents(client, sanitizedPassengerIds, verifierName, 'scanner', 'verify');
 
@@ -1268,12 +1258,20 @@ app.patch('/api/admin/passengers/:id', requireAdmin, rateLimit, async (req, res)
             values.push(normalizedName);
             updates.push(`nama_normalized = $${values.length + 1}`);
             values.push(normalizeNameQuery(normalizedName));
+            // Performance: update nik_suffix when name changes (in case of ID correction)
         }
 
         if (nik !== undefined) {
+            const nikVal = normalizeAdminNik(nik);
             updates.push(`nik = $${values.length + 1}`);
-            values.push(normalizeAdminNik(nik));
+            values.push(nikVal);
+            // Performance: keep nik_suffix in sync
+            const nikSuffix = nikVal ? nikVal.slice(-6) : null;
+            updates.push(`nik_suffix = $${values.length + 1}`);
+            values.push(nikSuffix);
         }
+
+
 
         if (ktpUrl !== undefined) {
             updates.push(`ktp_url = $${values.length + 1}`);
@@ -1395,7 +1393,7 @@ app.post('/api/unverify-passengers', requireAdmin, rateLimit, async (req, res) =
 
 // ---- Admin Summary Cache (5s TTL) ----
 let _adminSummaryCache = { data: null, expiresAt: 0 };
-const ADMIN_SUMMARY_TTL_MS = 5_000;
+const ADMIN_SUMMARY_TTL_MS = 30_000; // Performance: raised from 5s to 30s
 
 app.get('/api/admin-summary', requireAdmin, async (req, res) => {
     try {

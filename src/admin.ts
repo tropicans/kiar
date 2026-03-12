@@ -196,6 +196,8 @@ let registrationsData: Registration[] = [];
 let filteredData: Registration[] = [];
 let currentPage = 1;
 const ITEMS_PER_PAGE = 10;
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const SEARCH_DEBOUNCE_MS = 300;
 
 let adminSummaryData: AdminSummaryResponse | null = null;
 let adminAuditEntries: AdminAuditEntry[] = [];
@@ -353,7 +355,8 @@ async function unverifyPassenger(passengerId: number, passengerName: string) {
         target.verifiedBy = null;
     }
 
-    await loadData();
+    // Performance: lightweight refresh — only update stats, not full registrations
+    await refreshDashboardStats();
 }
 
 
@@ -392,7 +395,7 @@ async function unverifyRegistration(registrationId: string) {
         throw new Error(result.error || `HTTP ${response.status}`);
     }
 
-    await loadData();
+    await refreshDashboardStats();
 }
 
 async function updateRegistration(registrationId: string, payload: { phone?: string | null; ktpUrl?: string | null; idCardUrl?: string | null; active?: boolean }) {
@@ -407,7 +410,7 @@ async function updateRegistration(registrationId: string, payload: { phone?: str
         throw new Error(result.error || `HTTP ${response.status}`);
     }
 
-    await loadData();
+    await refreshDashboardStats();
 }
 
 async function updatePassenger(passengerId: number, payload: { nama?: string; nik?: string | null; ktpUrl?: string | null; active?: boolean }) {
@@ -422,7 +425,7 @@ async function updatePassenger(passengerId: number, payload: { nama?: string; ni
         throw new Error(result.error || `HTTP ${response.status}`);
     }
 
-    await loadData();
+    await refreshDashboardStats();
 }
 
 async function editRegistrationPhone(registrationId: string) {
@@ -1282,13 +1285,50 @@ async function loadData() {
     }
 }
 
+// Performance: lightweight refresh — only update stats panels, not the heavy registrations list
+async function refreshDashboardStats() {
+    try {
+        const [summaryResponse, busStatsResponse, auditResponse] = await Promise.all([
+            adminFetch('/api/admin-summary'),
+            adminFetch('/api/admin/bus-stats'),
+            adminFetch('/api/admin-audit'),
+        ]);
+
+        if (summaryResponse.ok) {
+            adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
+            renderSummary();
+        }
+        if (busStatsResponse.ok) {
+            const busStatsPayload = await busStatsResponse.json() as BusStatsResponse;
+            busStatsData = Array.isArray(busStatsPayload.items) ? busStatsPayload.items : [];
+            populateBusFilterOptions();
+            renderBusStats();
+        }
+        if (auditResponse.ok) {
+            const auditPayload = await auditResponse.json() as { entries: AdminAuditEntry[] };
+            adminAuditEntries = Array.isArray(auditPayload.entries) ? auditPayload.entries : [];
+            renderAuditTable();
+        }
+
+        // Re-render the table with local state updates
+        applySearchFilter();
+        updateVisibleCountLabel();
+        renderTable();
+    } catch (err: any) {
+        console.error('refreshDashboardStats error:', err);
+    }
+}
+
 // --- Search and Pagination Logic ---
 
-searchInput.addEventListener('input', (e) => {
-    void e;
-    currentPage = 1; // Reset to page 1 on search
-    applySearchFilter();
-    renderTable();
+searchInput.addEventListener('input', () => {
+    // Performance: debounce search to avoid filtering on every keystroke
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        currentPage = 1;
+        applySearchFilter();
+        renderTable();
+    }, SEARCH_DEBOUNCE_MS);
 });
 
 btnPrevPage.addEventListener('click', () => {
