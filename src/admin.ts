@@ -112,7 +112,6 @@ interface AdminAuditEntry {
 
 // --- DOM Elements ---
 const dashboardContent = document.getElementById('dashboardContent') as HTMLDivElement;
-const btnBackToHome = document.getElementById('btnBackToHome') as HTMLButtonElement;
 
 const tableBody = document.getElementById('tableBody') as HTMLTableSectionElement;
 const totalDataCount = document.getElementById('totalDataCount') as HTMLSpanElement;
@@ -528,9 +527,7 @@ async function togglePassengerActive(passengerId: number) {
     }
 };
 
-btnBackToHome.addEventListener('click', () => {
-    window.location.href = '/';
-});
+
 
 // --- Theme ---
 const THEME_KEY = 'qrscan_theme';
