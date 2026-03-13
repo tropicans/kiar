@@ -15,7 +15,7 @@ COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY migration ./migration
 COPY scripts ./scripts
-COPY "Data Pemudik Final Banget.csv" "./"
+COPY ["Data Pemudik Final Banget.csv", "./"]
 COPY wait-for-db.sh ./wait-for-db.sh
 RUN sed -i 's/\r$//' ./wait-for-db.sh && chmod +x ./wait-for-db.sh
 
