@@ -3,7 +3,7 @@
 Dokumen ini menjelaskan proses import final satu kali dari file CSV lokal ke database.
 
 ## 1. Persiapan File
-1. Simpan file final sebagai `Data Pemudik Final.csv` di root project.
+1. Simpan file final sebagai `Data Pemudik Final Banget.csv` di root project.
 2. Pastikan header kolom mengikuti format data mudik saat ini (contoh: `Nama Pegawai`, `Nomor WA`, `QR Code`, `Nama Lengkap Penumpang 1`, `NIK`).
 
 ## 2. Persiapan Koneksi Database
@@ -17,7 +17,7 @@ npm ci
 npm run sync:final
 ```
 
-Secara default script membaca file `Data Pemudik Final.csv` di root project.
+Secara default script membaca file `Data Pemudik Final Banget.csv` di root project.
 
 Jika perlu path custom:
 

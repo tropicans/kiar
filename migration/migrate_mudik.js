@@ -21,7 +21,7 @@ const pool = new pg.Pool({
 
 const UPLOADS_DIR = path.join(__dirname, '../uploads');
 
-const DEFAULT_CSV_FILE_PATH = path.join(__dirname, '../Data Pemudik Final.csv');
+const DEFAULT_CSV_FILE_PATH = path.join(__dirname, '../Data Pemudik Final Banget.csv');
 
 const REQUIRED_HEADERS = [
     'Nama Pegawai',

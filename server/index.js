@@ -20,7 +20,7 @@ const API_JSON_LIMIT = process.env.API_JSON_LIMIT || '256kb';
 const MAX_BULK_IDS = Math.min(Math.max(parseInt(process.env.API_MAX_BULK_IDS || '200', 10) || 200, 1), 1000);
 const MAX_VERIFIER_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_VERIFIER_LENGTH || '120', 10) || 120, 10), 255);
 const MAX_REASON_LENGTH = Math.min(Math.max(parseInt(process.env.API_MAX_REASON_LENGTH || '500', 10) || 500, 50), 2000);
-const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final.csv');
+const ROUTE_CSV_PATH = process.env.ROUTE_CSV_PATH || path.join(__dirname, '../Data Pemudik Final Banget.csv');
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);

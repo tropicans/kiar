@@ -5,7 +5,7 @@ Dokumen ini menjelaskan cara memindahkan project ini ke laptop lain beserta data
 Poin penting:
 - `git pull` hanya menarik kode dan file yang ada di repository.
 - Database PostgreSQL tidak ikut terbawa otomatis.
-- File `Data Pemudik Final.csv` ikut terbawa jika memang sudah ada di repo dan berhasil ter-pull.
+- File `Data Pemudik Final Banget.csv` ikut terbawa jika memang sudah ada di repo dan berhasil ter-pull.
 
 ## 1. Clone repository
 
@@ -62,7 +62,7 @@ Kalau hanya butuh database dulu, cukup jalankan service Postgres sesuai kebutuha
 
 ## 4. Sinkronkan data final
 
-Pastikan file `Data Pemudik Final.csv` ada di root project.
+Pastikan file `Data Pemudik Final Banget.csv` ada di root project.
 
 Lalu jalankan:
 
@@ -71,7 +71,7 @@ npm run sync:final
 ```
 
 Perintah ini akan:
-- membaca `Data Pemudik Final.csv`
+- membaca `Data Pemudik Final Banget.csv`
 - melakukan upsert ke `registrations` dan `passengers`
 - menandai data aktif/nonaktif sesuai snapshot CSV terakhir
 

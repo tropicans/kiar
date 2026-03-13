@@ -62,7 +62,7 @@ To display KTP images, you have two options:
 
 ## 🔄 Final Data Sync (CSV Lokal)
 
-Sumber data operasional menggunakan file CSV lokal final (`Data Pemudik Final.csv`) dengan proses one-shot.
+Sumber data operasional menggunakan file CSV lokal final (`Data Pemudik Final Banget.csv`) dengan proses one-shot.
 
 ```bash
 npm run sync:final
@@ -78,5 +78,5 @@ Panduan lengkap ada di:
 - [SETUP_LAPTOP_BARU.md](./SETUP_LAPTOP_BARU.md)
 
 Di dokumen itu dijelaskan dua opsi:
-- clone repo + import ulang dari `Data Pemudik Final.csv`
+- clone repo + import ulang dari `Data Pemudik Final Banget.csv`
 - clone repo + restore dump PostgreSQL kalau ingin histori operasional ikut terbawa

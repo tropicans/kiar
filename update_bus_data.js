@@ -17,7 +17,7 @@ const pool = new pg.Pool({
     port: parseInt(process.env.DB_PORT || '5435'),
 });
 
-const CSV_FILE = path.join(__dirname, 'Data Pemudik Final.csv');
+const CSV_FILE = path.join(__dirname, 'Data Pemudik Final Banget.csv');
 
 function normalizeHeaderName(header) {
     if (!header) return header;

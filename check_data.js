@@ -17,7 +17,7 @@ const pool = new pg.Pool({
     port: parseInt(process.env.DB_PORT || '5435'),
 });
 
-const DEFAULT_CSV_FILE = path.join(__dirname, 'Data Pemudik Final.csv');
+const DEFAULT_CSV_FILE = path.join(__dirname, 'Data Pemudik Final Banget.csv');
 const CSV_FILE_PATH = process.env.CSV_FILE_PATH
     ? (path.isAbsolute(process.env.CSV_FILE_PATH)
         ? process.env.CSV_FILE_PATH

@@ -61,7 +61,7 @@ Jika ingin menggunakan domain (misal `mudikyksn.example.com`) dan HTTPS:
 3.  Proxy Pass port 80/443 ke `http://IP-CONTAINER:8080`.
 
 ## 7. Sinkronisasi Data Final (One-Shot)
-1. Upload `Data Pemudik Final.csv` ke root folder project di server.
+1. Upload `Data Pemudik Final Banget.csv` ke root folder project di server.
 2. Jalankan import final satu kali:
 
 ```bash
