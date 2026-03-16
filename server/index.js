@@ -51,57 +51,81 @@ function requireAdminApiKey(req, res, next) {
     return res.status(403).json({ error: 'Akses ditolak: Admin API key tidak valid' });
 }
 
-// ---- Session Store ----
-const sessions = new Map(); // token -> { email, name, picture, isAdmin, expiresAt }
+// ---- DB-backed Session Store ----
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-function createSession(email, name, picture, role) {
+async function createSession(email, name, picture, role) {
     const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
     const isAdmin = role === 'admin' || role === 'superadmin';
-    sessions.set(token, { email, name, picture, role, isAdmin, expiresAt: Date.now() + SESSION_TTL_MS });
-    return { token, email, name, picture, role, isAdmin };
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+    
+    try {
+        await pool.query(
+            `INSERT INTO app_sessions (token, email, name, picture, role, is_admin, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [token, email, name, picture, role, isAdmin, expiresAt]
+        );
+        return { token, email, name, picture, role, isAdmin, expiresAt };
+    } catch (dbErr) {
+        console.warn('DB session save failed (table might missing), check init.sql', dbErr.message);
+        throw dbErr;
+    }
 }
 
-function getSession(token) {
-    const session = sessions.get(token);
-    if (!session) return null;
-    if (Date.now() > session.expiresAt) { sessions.delete(token); return null; }
-    return session;
+async function getSession(token) {
+    if (!token) return null;
+    try {
+        const { rows } = await pool.query('SELECT * FROM app_sessions WHERE token = $1 AND expires_at > CURRENT_TIMESTAMP', [token]);
+        if (rows.length === 0) return null;
+        const s = rows[0];
+        return { token: s.token, email: s.email, name: s.name, picture: s.picture, role: s.role, isAdmin: s.is_admin, expiresAt: s.expires_at };
+    } catch (e) {
+        console.error('getSession error:', e);
+        return null;
+    }
 }
 
 // Cleanup expired sessions every hour
 setInterval(() => {
-    const now = Date.now();
-    for (const [token, session] of sessions) {
-        if (now > session.expiresAt) sessions.delete(token);
-    }
+    pool.query('DELETE FROM app_sessions WHERE expires_at < CURRENT_TIMESTAMP')
+        .catch(e => console.error('Session cleanup error:', e.message));
 }, 60 * 60 * 1000);
 
 // ---- Session Auth Middleware ----
-function requireSession(req, res, next) {
-    if (ALLOWED_EMAILS.length === 0) return next(); // No whitelist — skip auth
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (!token) return res.status(401).json({ error: 'Login diperlukan' });
-    const session = getSession(token);
-    if (!session) return res.status(401).json({ error: 'Sesi tidak valid atau sudah kedaluwarsa' });
-    req.userSession = session;
-    return next();
+async function requireSession(req, res, next) {
+    try {
+        if (ALLOWED_EMAILS.length === 0) return next(); // No whitelist — skip auth
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (!token) return res.status(401).json({ error: 'Login diperlukan' });
+        const session = await getSession(token);
+        if (!session) return res.status(401).json({ error: 'Sesi tidak valid atau sudah kedaluwarsa' });
+        req.userSession = session;
+        return next();
+    } catch (err) {
+        console.error('Session middleware error:', err);
+        return res.status(500).json({ error: 'Internal Server Error' });
+    }
 }
 
 // ---- Admin Auth: accept session with admin email OR admin API key ----
-function requireAdmin(req, res, next) {
-    // Try admin API key first
-    const apiKey = req.headers['x-admin-key'] || req.query.adminKey || '';
-    if (ADMIN_API_KEY && apiKey === ADMIN_API_KEY) return next();
-    // Try session token
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (token) {
-        const session = getSession(token);
-        if (session && session.isAdmin) { req.userSession = session; return next(); }
+async function requireAdmin(req, res, next) {
+    try {
+        // Try admin API key first
+        const apiKey = req.headers['x-admin-key'] || req.query.adminKey || '';
+        if (ADMIN_API_KEY && apiKey === ADMIN_API_KEY) return next();
+        // Try session token
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (token) {
+            const session = await getSession(token);
+            if (session && session.isAdmin) { req.userSession = session; return next(); }
+        }
+        return res.status(403).json({ error: 'Akses admin ditolak' });
+    } catch (err) {
+        console.error('Admin middleware error:', err);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
-    return res.status(403).json({ error: 'Akses admin ditolak' });
 }
 
 // ---- In-memory Rate Limiter ----
@@ -645,7 +669,7 @@ app.post('/api/auth/google', rateLimit, async (req, res) => {
             return res.status(403).json({ error: `Email ${email} tidak terdaftar. Hubungi admin.` });
         }
 
-        const session = createSession(email, name, picture, user.role);
+        const session = await createSession(email, name, picture, user.role);
         res.json({
             token: session.token,
             email: session.email,
@@ -661,25 +685,33 @@ app.post('/api/auth/google', rateLimit, async (req, res) => {
 });
 
 // GET /api/auth/me — check current session
-app.get('/api/auth/me', (req, res) => {
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    if (!token) return res.status(401).json({ error: 'Tidak ada sesi' });
-    const session = getSession(token);
-    if (!session) return res.status(401).json({ error: 'Sesi kedaluwarsa' });
-    res.json({ email: session.email, name: session.name, picture: session.picture, role: session.role, isAdmin: session.isAdmin });
+app.get('/api/auth/me', async (req, res) => {
+    try {
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        if (!token) return res.status(401).json({ error: 'Tidak ada sesi' });
+        const session = await getSession(token);
+        if (!session) return res.status(401).json({ error: 'Sesi kedaluwarsa' });
+        res.json({ email: session.email, name: session.name, picture: session.picture, role: session.role, isAdmin: session.isAdmin });
+    } catch (err) {
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 });
 
 // ---- User Management (superadmin only) ----
-function requireSuperAdmin(req, res, next) {
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    const session = getSession(token);
-    if (!session || session.role !== 'superadmin') {
-        return res.status(403).json({ error: 'Hanya super admin yang dapat mengelola pengguna' });
+async function requireSuperAdmin(req, res, next) {
+    try {
+        const authHeader = req.headers['authorization'] || '';
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+        const session = await getSession(token);
+        if (!session || session.role !== 'superadmin') {
+            return res.status(403).json({ error: 'Hanya super admin yang dapat mengelola pengguna' });
+        }
+        req.userSession = session;
+        return next();
+    } catch (err) {
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
-    req.userSession = session;
-    return next();
 }
 
 app.get('/api/admin/users', requireSuperAdmin, async (req, res) => {
@@ -1615,19 +1647,12 @@ app.post('/api/unverify-passengers', requireAdmin, rateLimit, async (req, res) =
     }
 });
 
-// ---- Admin Summary Cache (5s TTL) ----
-let _adminSummaryCache = { data: null, expiresAt: 0 };
-const ADMIN_SUMMARY_TTL_MS = 30_000; // Performance: raised from 5s to 30s
+// ---- Admin Summary Background Cache Worker ----
+const ADMIN_SUMMARY_INTERVAL_MS = 30_000;
+let _adminSummaryMemoryCache = { data: null, expiresAt: 0 };
 
-app.get('/api/admin-summary', requireAdmin, async (req, res) => {
+async function updateAdminSummaryWorker() {
     try {
-        await ensureAuditSchema();
-
-        const now = Date.now();
-        if (_adminSummaryCache.data && now < _adminSummaryCache.expiresAt) {
-            return res.json(_adminSummaryCache.data);
-        }
-
         const [countResult, registrationBreakdownResult, topVerifiersResult, recentActivityResult, hourlyTrendResult] = await Promise.all([
             pool.query(
                 `SELECT
@@ -1665,7 +1690,6 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                  ORDER BY total_actions DESC, last_action_at DESC
                  LIMIT 5`
             ),
-            // Performance: simplified recent activity — skip legacy UNION ALL + NOT EXISTS
             pool.query(
                 `SELECT
                     pv.id,
@@ -1711,6 +1735,24 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
         const pendingCount = Math.max(0, passengersCount - verifiedCount);
         const verificationRate = passengersCount > 0 ? Number(((verifiedCount / passengersCount) * 100).toFixed(1)) : 0;
 
+        try {
+            await pool.query(
+                `UPDATE admin_summary_cache
+                 SET registrations_count = $1, passengers_count = $2, verified_count = $3,
+                     fully_verified_count = $4, partial_verified_count = $5, pending_registrations_count = $6,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = 1`,
+                [
+                    registrationsCount, passengersCount, verifiedCount,
+                    Number(breakdownRow.fully_verified_count || 0),
+                    Number(breakdownRow.partial_verified_count || 0),
+                    Number(breakdownRow.pending_count || 0)
+                ]
+            );
+        } catch (dbErr) {
+            console.warn('Could not update admin_summary_cache table (might not exist yet):', dbErr.message);
+        }
+
         const responseData = {
             summary: {
                 registrationsCount,
@@ -1745,8 +1787,26 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
             })),
         };
 
-        _adminSummaryCache = { data: responseData, expiresAt: Date.now() + ADMIN_SUMMARY_TTL_MS };
-        res.json(responseData);
+        _adminSummaryMemoryCache = { data: responseData, expiresAt: Date.now() + ADMIN_SUMMARY_INTERVAL_MS };
+    } catch (err) {
+        console.error('Admin summary worker failed:', err);
+    }
+}
+
+// Start worker
+setInterval(updateAdminSummaryWorker, ADMIN_SUMMARY_INTERVAL_MS);
+setTimeout(updateAdminSummaryWorker, 2000); // Initial run
+
+app.get('/api/admin-summary', requireAdmin, async (req, res) => {
+    try {
+        if (_adminSummaryMemoryCache.data) {
+            return res.json(_adminSummaryMemoryCache.data);
+        }
+        await updateAdminSummaryWorker();
+        if (_adminSummaryMemoryCache.data) {
+            return res.json(_adminSummaryMemoryCache.data);
+        }
+        res.status(503).json({ error: 'Data not ready yet' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -1853,10 +1913,9 @@ app.get('/api/admin-audit', requireAdmin, async (req, res) => {
                     p.registration_id
                 FROM passenger_verifications pv
                 JOIN passengers p ON p.id = pv.passenger_id
-                WHERE pv.action = 'unverify'
             ) entries
             ORDER BY created_at DESC, id DESC
-            LIMIT 100`
+            LIMIT 500`
         );
 
         res.json({ entries: result.rows });

@@ -681,7 +681,10 @@ function renderBusPassengerList(passengers: Passenger[], query: string = '') {
 if (busPassengersSearch) {
     busPassengersSearch.addEventListener('input', (e) => {
         const query = (e.target as HTMLInputElement).value;
-        renderBusPassengerList(currentBusPassengers, query);
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            renderBusPassengerList(currentBusPassengers, query);
+        }, SEARCH_DEBOUNCE_MS);
     });
 }
 
@@ -1017,14 +1020,23 @@ function renderAuditTable() {
         const target = entry.entry_type === 'crud'
             ? `${entry.entity_type} ${entry.entity_id}`
             : `${entry.passenger_name || 'Penumpang'}${entry.registration_id ? ` - ${entry.registration_id}` : ''}`;
-        const changeText = entry.entry_type === 'crud'
-            ? `${entry.field_name}: ${entry.old_value || '-'} -> ${entry.new_value || '-'}`
-            : `${entry.action === 'unverify' ? 'Batalkan verifikasi' : entry.action}${entry.notes ? ` (${entry.notes})` : ''}`;
+        let changeText: string;
+        if (entry.entry_type === 'crud') {
+            changeText = `${entry.field_name}: ${entry.old_value || '-'} -> ${entry.new_value || '-'}`;
+        } else if (entry.action === 'unverify') {
+            changeText = `Batalkan verifikasi${entry.notes ? ` (${entry.notes})` : ''}`;
+        } else {
+            changeText = `Verifikasi penumpang${entry.notes ? ` (${entry.notes})` : ''}`;
+        }
+
+        const badgeClass = entry.action === 'unverify' ? 'unverify' : 'verify';
+        const badgeLabel = entry.entry_type === 'crud' ? 'CRUD'
+            : entry.action === 'unverify' ? 'BATALKAN' : 'VERIFIKASI';
 
         return `
             <tr>
                 <td>${formatDateTime(entry.created_at)}</td>
-                <td><span class="activity-badge ${entry.action === 'unverify' ? 'unverify' : 'verify'}">${entry.entry_type === 'crud' ? 'CRUD' : 'Verifikasi'}</span></td>
+                <td><span class="activity-badge ${badgeClass}">${badgeLabel}</span></td>
                 <td>${target}</td>
                 <td class="audit-value">${changeText}</td>
                 <td>${entry.actor || 'Admin Dashboard'}</td>
