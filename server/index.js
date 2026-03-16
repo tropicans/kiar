@@ -760,7 +760,13 @@ app.get('/api/lookup/:id', requireSession, rateLimit, async (req, res) => {
             return res.status(400).json({ error: 'ID registrasi tidak valid' });
         }
 
-        const result = await pool.query('SELECT * FROM registrations WHERE id = $1', [registrationId]);
+        const result = await pool.query(
+            `SELECT id, phone, phone_raw, ktp_url, id_card_url,
+                    jurusan, kota_tujuan, kelompok_bis, bis,
+                    jumlah_orang, kapasitas_bis, active
+             FROM registrations WHERE id = $1`,
+            [registrationId],
+        );
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
@@ -770,8 +776,10 @@ app.get('/api/lookup/:id', requireSession, rateLimit, async (req, res) => {
 
         // Fetch all active passengers for group verification
         const passengersResult = await pool.query(
-            'SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC',
-            [registrationId]
+            `SELECT id, registration_id, nama, is_registrant, nik, ktp_url,
+                    verified, verified_at, verified_by
+             FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC`,
+            [registrationId],
         );
 
         res.json({
@@ -827,14 +835,22 @@ app.get('/api/lookup-nik/:last6', requireSession, rateLimit, async (req, res) =>
 
         const registrationId = regMatchResult.rows[0].registration_id;
 
-        const regResult = await pool.query('SELECT * FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE', [registrationId]);
+        const regResult = await pool.query(
+            `SELECT id, phone, phone_raw, ktp_url, id_card_url,
+                    jurusan, kota_tujuan, kelompok_bis, bis,
+                    jumlah_orang, kapasitas_bis, active
+             FROM registrations WHERE id = $1 AND COALESCE(active, TRUE) = TRUE`,
+            [registrationId],
+        );
         if (regResult.rows.length === 0) {
             return res.status(404).json({ error: 'Data tidak ditemukan' });
         }
 
         const passengersResult = await pool.query(
-            'SELECT * FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC',
-            [registrationId]
+            `SELECT id, registration_id, nama, is_registrant, nik, ktp_url,
+                    verified, verified_at, verified_by
+             FROM passengers WHERE registration_id = $1 AND COALESCE(active, TRUE) = TRUE ORDER BY id ASC`,
+            [registrationId],
         );
 
         const matchedPassengerIds = passengersResult.rows
@@ -1082,29 +1098,117 @@ app.post('/api/admin/registrations', requireAdmin, rateLimit, async (req, res) =
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
-// API: Get All Registrations (for Admin Dashboard)
+// API: Get Registrations with server-side pagination, filtering, and search
 app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
     try {
         await ensureRegistrationDataReady();
-        const includeInactive = String(req.query.includeInactive || '') === '1';
-        const registrationWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
-        const passengerWhere = includeInactive ? '' : 'WHERE COALESCE(active, TRUE) = TRUE';
 
-        // Fetch all registrations
-        const regResult = await pool.query(`SELECT * FROM registrations ${registrationWhere} ORDER BY id ASC`);
-        if (regResult.rows.length === 0) {
-            return res.json([]);
+        const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+        const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage || '20', 10) || 20));
+        const search = normalizeNameQuery(req.query.search || '');
+        const statusFilter = String(req.query.status || 'all').toLowerCase();
+        const activeFilter = String(req.query.active || 'all').toLowerCase();
+
+        // Build WHERE conditions
+        const conditions = [];
+        const values = [];
+        let paramIdx = 1;
+
+        // Active filter
+        if (activeFilter === 'active') {
+            conditions.push('COALESCE(r.active, TRUE) = TRUE');
+        } else if (activeFilter === 'only-inactive') {
+            conditions.push('COALESCE(r.active, TRUE) = FALSE');
+        }
+        // 'all' — no active condition
+
+        // Search filter: match registration ID, phone, or passenger name/nik
+        if (search.length >= 2) {
+            conditions.push(`(
+                lower(r.id) LIKE $${paramIdx}
+                OR lower(COALESCE(r.phone, '')) LIKE $${paramIdx}
+                OR EXISTS (
+                    SELECT 1 FROM passengers ps
+                    WHERE ps.registration_id = r.id
+                    AND (ps.nama_normalized LIKE $${paramIdx} OR COALESCE(ps.nik, '') LIKE $${paramIdx})
+                )
+            )`);
+            values.push(`%${search}%`);
+            paramIdx++;
         }
 
-        const registrations = regResult.rows;
+        const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
-        // Fetch all passengers
-        const passResult = await pool.query(`SELECT * FROM passengers ${passengerWhere} ORDER BY registration_id ASC, id ASC`);
-        const passengers = passResult.rows;
+        // Status filter uses a HAVING clause after grouping passengers
+        // We need to join passengers to filter by verification status
+        let statusHaving = '';
+        if (statusFilter === 'verified') {
+            statusHaving = 'HAVING COUNT(*) FILTER (WHERE p.verified = TRUE AND COALESCE(p.active, TRUE) = TRUE) > 0';
+        } else if (statusFilter === 'pending') {
+            statusHaving = 'HAVING COUNT(*) FILTER (WHERE p.verified = TRUE AND COALESCE(p.active, TRUE) = TRUE) = 0 OR COUNT(*) FILTER (WHERE p.verified = FALSE AND COALESCE(p.active, TRUE) = TRUE) > 0';
+        }
 
-        // Performance: group passengers using Map (O(N) instead of O(N*M))
+        // Count total matching registrations
+        const countQuery = statusHaving
+            ? `SELECT COUNT(*) AS total FROM (
+                SELECT r.id
+                FROM registrations r
+                LEFT JOIN passengers p ON p.registration_id = r.id
+                ${whereClause}
+                GROUP BY r.id
+                ${statusHaving}
+               ) sub`
+            : `SELECT COUNT(*) AS total FROM registrations r ${whereClause}`;
+
+        const countResult = await pool.query(countQuery, values);
+        const total = parseInt(countResult.rows[0]?.total || '0', 10);
+
+        if (total === 0) {
+            return res.json({ items: [], total: 0, page, perPage });
+        }
+
+        // Fetch paginated registration IDs
+        const offset = (page - 1) * perPage;
+        let regIdsQuery;
+        if (statusHaving) {
+            regIdsQuery = `SELECT r.id
+                FROM registrations r
+                LEFT JOIN passengers p ON p.registration_id = r.id
+                ${whereClause}
+                GROUP BY r.id
+                ${statusHaving}
+                ORDER BY r.id ASC
+                LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        } else {
+            regIdsQuery = `SELECT r.id FROM registrations r ${whereClause} ORDER BY r.id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        }
+        const regIdsResult = await pool.query(regIdsQuery, [...values, perPage, offset]);
+        const regIds = regIdsResult.rows.map(r => r.id);
+
+        if (regIds.length === 0) {
+            return res.json({ items: [], total, page, perPage });
+        }
+
+        // Fetch full registration data for the page
+        const regResult = await pool.query(
+            `SELECT id, phone, phone_raw, ktp_url, id_card_url,
+                    jurusan, kota_tujuan, kelompok_bis, bis,
+                    jumlah_orang, kapasitas_bis, active
+             FROM registrations WHERE id = ANY($1) ORDER BY id ASC`,
+            [regIds],
+        );
+
+        // Fetch passengers for these registrations only
+        const passResult = await pool.query(
+            `SELECT id, registration_id, nama, is_registrant, nik, ktp_url,
+                    verified, verified_at, verified_by, active
+             FROM passengers WHERE registration_id = ANY($1) ORDER BY registration_id ASC, id ASC`,
+            [regIds],
+        );
+
+        // Group passengers using Map
         const passengersByRegId = new Map();
-        for (const p of passengers) {
+        for (const p of passResult.rows) {
             const regId = p.registration_id;
             if (!passengersByRegId.has(regId)) {
                 passengersByRegId.set(regId, []);
@@ -1122,7 +1226,7 @@ app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
             });
         }
 
-        const groupedData = registrations.map(reg => {
+        const items = regResult.rows.map(reg => {
             const base = mapRegistrationRow(reg);
             return {
                 ...base,
@@ -1130,7 +1234,7 @@ app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
             };
         });
 
-        res.json(groupedData);
+        res.json({ items, total, page, perPage });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });

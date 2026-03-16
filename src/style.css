@@ -2816,3 +2816,33 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ============================================
+   Performance: Reduced Motion & Mobile GPU
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .orb,
+  .glass-card,
+  .placeholder-icon,
+  .vf-scanline,
+  .scan-cta-icon {
+    animation: none !important;
+  }
+
+  .glass-card {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .orb {
+    filter: blur(40px);
+    opacity: 0.15;
+  }
+
+  .glass-card {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}

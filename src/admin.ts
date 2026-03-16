@@ -1,6 +1,17 @@
-import { Chart, registerables } from 'chart.js';
+import {
+    Chart,
+    BarController, LineController,
+    CategoryScale, LinearScale,
+    BarElement, LineElement, PointElement,
+    Legend, Tooltip, Filler,
+} from 'chart.js';
 
-Chart.register(...registerables);
+Chart.register(
+    BarController, LineController,
+    CategoryScale, LinearScale,
+    BarElement, LineElement, PointElement,
+    Legend, Tooltip, Filler,
+);
 
 // --- Types ---
 interface Passenger {
@@ -205,6 +216,7 @@ const AUDIT_PER_PAGE = 20;
 let verificationTrendChart: Chart | null = null;
 let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
 let busStatsData: BusStatsEntry[] = [];
+let totalRegistrations = 0;
 type CrudModalState =
     | { kind: 'registration'; registrationId: string }
     | { kind: 'passenger'; passengerId: number };
@@ -547,17 +559,21 @@ function toggleTheme() {
 }
 
 themeToggle.addEventListener('click', toggleTheme);
-statusFilter.addEventListener('change', () => {
+statusFilter.addEventListener('change', async () => {
     currentPage = 1;
-    applySearchFilter();
-    updateVisibleCountLabel();
-    renderTable();
+    try {
+        await fetchRegistrationsPage();
+        updateVisibleCountLabel();
+        renderTable();
+    } catch (err: any) { console.error('Filter failed:', err); }
 });
-activeFilter.addEventListener('change', () => {
+activeFilter.addEventListener('change', async () => {
     currentPage = 1;
-    applySearchFilter();
-    updateVisibleCountLabel();
-    renderTable();
+    try {
+        await fetchRegistrationsPage();
+        updateVisibleCountLabel();
+        renderTable();
+    } catch (err: any) { console.error('Filter failed:', err); }
 });
 busFilterSelect.addEventListener('change', () => {
     renderBusStats();
@@ -612,58 +628,48 @@ function formatDateTime(value: string | null | undefined): string {
     }).format(date);
 }
 
-function applySearchFilter() {
-    const query = searchInput.value.toLowerCase().trim();
-    const statusMode = statusFilter.value;
-    const activeMode = activeFilter.value;
+// Server-side filtering — build query params for paginated API
+function buildRegistrationParams(): URLSearchParams {
+    const params = new URLSearchParams();
+    params.set('page', String(currentPage));
+    params.set('perPage', String(ITEMS_PER_PAGE));
+    const query = searchInput.value.trim();
+    if (query.length >= 2) params.set('search', query);
+    if (statusFilter.value !== 'all') params.set('status', statusFilter.value);
+    if (activeFilter.value !== 'all') params.set('active', activeFilter.value);
+    return params;
+}
 
-    filteredData = registrationsData.filter((reg) => {
-        const matchesStatus = statusMode === 'all'
-            || (statusMode === 'verified' && reg.passengers.some((p) => p.verified))
-            || (statusMode === 'pending' && !reg.passengers.some((p) => p.verified));
-        const matchesActive = activeMode === 'all'
-            || (activeMode === 'active' && reg.active)
-            || (activeMode === 'inactive' && true)
-            || (activeMode === 'only-inactive' && !reg.active);
+async function fetchRegistrationsPage() {
+    const params = buildRegistrationParams();
+    const res = await adminFetch(`/api/registrations?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch registrations');
+    const data = await res.json() as { items: Registration[]; total: number; page: number; perPage: number };
 
-        if (!matchesStatus || !matchesActive) {
-            return false;
+    registrationsData = (data.items || []).map(reg => {
+        if (reg.phone) {
+            reg.phone = reg.phone.split(/\s*DAN\s*|\s*dan\s*|\s*\/\s*|\s*,\s*/)[0].trim();
         }
-
-        if (!query) {
-            return true;
-        }
-
-        const matchId = reg.id.toLowerCase().includes(query);
-        const matchPhone = reg.phone && reg.phone.includes(query);
-        const matchRegistrationState = reg.active
-            ? ('aktif'.includes(query) || 'active'.includes(query))
-            : ('nonaktif'.includes(query) || 'inactive'.includes(query));
-        const matchPassenger = reg.passengers.some((p) => p.nama.toLowerCase().includes(query)
-            || (p.nik && p.nik.includes(query))
-            || (p.verifiedBy && p.verifiedBy.toLowerCase().includes(query))
-            || (p.active ? ('aktif'.includes(query) || 'active'.includes(query)) : ('nonaktif'.includes(query) || 'inactive'.includes(query))));
-        return matchId || matchPhone || matchRegistrationState || matchPassenger;
+        return reg;
     });
+    filteredData = registrationsData;
+    totalRegistrations = data.total || 0;
+    currentPage = data.page || 1;
 }
 
 function updateVisibleCountLabel() {
-    const activeCount = registrationsData.filter((reg) => reg.active).length;
-    const inactiveCount = registrationsData.length - activeCount;
-    totalDataCount.textContent = filteredData.length.toString();
-    if (tabBadgePeserta) tabBadgePeserta.textContent = filteredData.length.toString();
+    totalDataCount.textContent = totalRegistrations.toString();
+    if (tabBadgePeserta) tabBadgePeserta.textContent = totalRegistrations.toString();
 
-    if (activeFilter.value === 'active') {
-        totalDataMeta.textContent = `(aktif saja, total aktif ${activeCount})`;
-        return;
-    }
-
-    if (activeFilter.value === 'only-inactive') {
-        totalDataMeta.textContent = `(hanya nonaktif, total nonaktif ${inactiveCount})`;
-        return;
-    }
-
-    totalDataMeta.textContent = `(aktif ${activeCount}, nonaktif ${inactiveCount})`;
+    const filterDesc = [];
+    if (activeFilter.value === 'active') filterDesc.push('aktif saja');
+    else if (activeFilter.value === 'only-inactive') filterDesc.push('hanya nonaktif');
+    if (statusFilter.value === 'verified') filterDesc.push('sudah verifikasi');
+    else if (statusFilter.value === 'pending') filterDesc.push('belum verifikasi');
+    if (searchInput.value.trim()) filterDesc.push(`pencarian: "${searchInput.value.trim()}"`);
+    totalDataMeta.textContent = filterDesc.length > 0
+        ? `(filter: ${filterDesc.join(', ')})`
+        : `(menampilkan ${registrationsData.length} dari ${totalRegistrations})`;
 }
 
 function renderTrendChart(points: HourlyTrendPoint[]) {
@@ -1263,21 +1269,8 @@ async function loadData() {
             console.error('Audit load failed:', err);
         });
 
-    const registrationsPromise = adminFetch('/api/registrations?includeInactive=1')
-        .then(async (res) => {
-            if (!res.ok) throw new Error('Failed to fetch registrations');
-            const rawData: Registration[] = await res.json();
-            registrationsData = rawData;
-
-            // Clean up No WhatsApp field (take only the first number if " DAN " is present)
-            registrationsData = registrationsData.map(reg => {
-                if (reg.phone) {
-                    reg.phone = reg.phone.split(/\s*DAN\s*|\s*dan\s*|\s*\/\s*|\s*,\s*/)[0].trim();
-                }
-                return reg;
-            });
-
-            applySearchFilter();
+    const registrationsPromise = fetchRegistrationsPage()
+        .then(() => {
             updateVisibleCountLabel();
             renderTable();
         })
@@ -1290,7 +1283,7 @@ async function loadData() {
     await Promise.allSettled([summaryPromise, busStatsPromise, auditPromise, registrationsPromise]);
 }
 
-// Performance: lightweight refresh — only update stats panels, not the heavy registrations list
+// Performance: lightweight refresh — update stats panels and re-fetch current page of registrations
 async function refreshDashboardStats() {
     try {
         const [summaryResponse, busStatsResponse, auditResponse] = await Promise.all([
@@ -1315,8 +1308,8 @@ async function refreshDashboardStats() {
             renderAuditTable();
         }
 
-        // Re-render the table with local state updates
-        applySearchFilter();
+        // Re-fetch current page from server
+        await fetchRegistrationsPage();
         updateVisibleCountLabel();
         renderTable();
     } catch (err: any) {
@@ -1327,26 +1320,35 @@ async function refreshDashboardStats() {
 // --- Search and Pagination Logic ---
 
 searchInput.addEventListener('input', () => {
-    // Performance: debounce search to avoid filtering on every keystroke
+    // Performance: debounce search and fetch from server
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = setTimeout(async () => {
         currentPage = 1;
-        applySearchFilter();
-        renderTable();
+        try {
+            await fetchRegistrationsPage();
+            updateVisibleCountLabel();
+            renderTable();
+        } catch (err: any) {
+            console.error('Search failed:', err);
+        }
     }, SEARCH_DEBOUNCE_MS);
 });
 
-btnPrevPage.addEventListener('click', () => {
+btnPrevPage.addEventListener('click', async () => {
     if (currentPage > 1) {
         currentPage--;
+        await fetchRegistrationsPage();
+        updateVisibleCountLabel();
         renderTable();
     }
 });
 
-btnNextPage.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+btnNextPage.addEventListener('click', async () => {
+    const totalPages = Math.ceil(totalRegistrations / ITEMS_PER_PAGE);
     if (currentPage < totalPages) {
         currentPage++;
+        await fetchRegistrationsPage();
+        updateVisibleCountLabel();
         renderTable();
     }
 });
@@ -1364,15 +1366,17 @@ function createPageButton(pageNum: number, isCurrent: boolean) {
         btn.style.border = 'none';
     }
 
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
         currentPage = pageNum;
+        await fetchRegistrationsPage();
+        updateVisibleCountLabel();
         renderTable();
     });
     return btn;
 }
 
 function renderPagination() {
-    const totalItems = filteredData.length;
+    const totalItems = totalRegistrations;
     const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
 
     if (totalItems <= ITEMS_PER_PAGE) {
@@ -1438,7 +1442,7 @@ async function renderTable() {
     }
 
     const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
-    const paginatedItems = filteredData.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+    const paginatedItems = filteredData; // Already server-paginated
 
     renderPagination();
 
