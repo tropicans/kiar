@@ -1229,50 +1229,65 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadData() {
-    try {
-        const [registrationsResponse, summaryResponse, busStatsResponse, auditResponse] = await Promise.all([
-            adminFetch('/api/registrations?includeInactive=1'),
-            adminFetch('/api/admin-summary'),
-            adminFetch('/api/admin/bus-stats'),
-            adminFetch('/api/admin-audit'),
-        ]);
-
-        if (!registrationsResponse.ok) throw new Error('Failed to fetch registrations');
-        if (!summaryResponse.ok) throw new Error('Failed to fetch admin summary');
-        if (!busStatsResponse.ok) throw new Error('Failed to fetch bus stats');
-        if (!auditResponse.ok) throw new Error('Failed to fetch admin audit');
-
-        const rawData: Registration[] = await registrationsResponse.json();
-        adminSummaryData = await summaryResponse.json() as AdminSummaryResponse;
-        const busStatsPayload = await busStatsResponse.json() as BusStatsResponse;
-        const auditPayload = await auditResponse.json() as { entries: AdminAuditEntry[] };
-        adminAuditEntries = Array.isArray(auditPayload.entries) ? auditPayload.entries : [];
-        busStatsData = Array.isArray(busStatsPayload.items) ? busStatsPayload.items : [];
-
-        registrationsData = rawData;
-
-        // Clean up No WhatsApp field (take only the first number if " DAN " is present)
-        registrationsData = registrationsData.map(reg => {
-            if (reg.phone) {
-                reg.phone = reg.phone.split(/\s*DAN\s*|\s*dan\s*|\s*\/\s*|\s*,\s*/)[0].trim();
-            }
-            return reg;
+    // Performance: progressive loading — render each section independently as data arrives
+    const summaryPromise = adminFetch('/api/admin-summary')
+        .then(async (res) => {
+            if (!res.ok) throw new Error('Failed to fetch admin summary');
+            adminSummaryData = await res.json() as AdminSummaryResponse;
+            renderSummary();
+        })
+        .catch((err: any) => {
+            console.error('Summary load failed:', err);
         });
 
-        applySearchFilter();
-        updateVisibleCountLabel();
+    const busStatsPromise = adminFetch('/api/admin/bus-stats')
+        .then(async (res) => {
+            if (!res.ok) throw new Error('Failed to fetch bus stats');
+            const busStatsPayload = await res.json() as BusStatsResponse;
+            busStatsData = Array.isArray(busStatsPayload.items) ? busStatsPayload.items : [];
+            populateBusFilterOptions();
+            renderBusStats();
+        })
+        .catch((err: any) => {
+            console.error('Bus stats load failed:', err);
+        });
 
-        renderTable();
-        renderSummary();
-        renderAuditTable();
-        populateBusFilterOptions();
-        renderBusStats();
+    const auditPromise = adminFetch('/api/admin-audit')
+        .then(async (res) => {
+            if (!res.ok) throw new Error('Failed to fetch admin audit');
+            const auditPayload = await res.json() as { entries: AdminAuditEntry[] };
+            adminAuditEntries = Array.isArray(auditPayload.entries) ? auditPayload.entries : [];
+            renderAuditTable();
+        })
+        .catch((err: any) => {
+            console.error('Audit load failed:', err);
+        });
 
-    } catch (err: any) {
-        console.error(err);
-        showAdminToast(`Gagal memuat dashboard: ${err.message}`);
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-msg); padding: 32px;">Gagal memuat data: ${err.message}</td></tr>`;
-    }
+    const registrationsPromise = adminFetch('/api/registrations?includeInactive=1')
+        .then(async (res) => {
+            if (!res.ok) throw new Error('Failed to fetch registrations');
+            const rawData: Registration[] = await res.json();
+            registrationsData = rawData;
+
+            // Clean up No WhatsApp field (take only the first number if " DAN " is present)
+            registrationsData = registrationsData.map(reg => {
+                if (reg.phone) {
+                    reg.phone = reg.phone.split(/\s*DAN\s*|\s*dan\s*|\s*\/\s*|\s*,\s*/)[0].trim();
+                }
+                return reg;
+            });
+
+            applySearchFilter();
+            updateVisibleCountLabel();
+            renderTable();
+        })
+        .catch((err: any) => {
+            console.error('Registrations load failed:', err);
+            showAdminToast(`Gagal memuat data peserta: ${err.message}`);
+            tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-msg); padding: 32px;">Gagal memuat data: ${err.message}</td></tr>`;
+        });
+
+    await Promise.allSettled([summaryPromise, busStatsPromise, auditPromise, registrationsPromise]);
 }
 
 // Performance: lightweight refresh — only update stats panels, not the heavy registrations list

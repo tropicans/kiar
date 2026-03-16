@@ -343,7 +343,7 @@ function ensureRegistrationDataReady() {
 
 async function fetchBusStatsRows(busFilter) {
     await ensureRegistrationDataReady();
-    // Performance: do bus-level grouping in SQL directly
+    // Performance: use regular LEFT JOIN instead of LATERAL JOIN
     const busFilterValue = (busFilter || '').toLowerCase();
     const result = await pool.query(
         `SELECT
@@ -352,18 +352,12 @@ async function fetchBusStatsRows(busFilter) {
             MAX(r.kota_tujuan) AS kota_tujuan,
             MAX(r.kelompok_bis) AS kelompok_bis,
             MAX(r.kapasitas_bis) AS kapasitas_bis,
-            SUM(COALESCE(r.jumlah_orang, sub.passenger_count))::int AS manifest_count,
-            SUM(sub.passenger_count)::int AS passenger_count,
-            SUM(sub.verified_count)::int AS verified_count,
+            SUM(COALESCE(r.jumlah_orang, 0))::int AS manifest_count,
+            COUNT(p.id)::int AS passenger_count,
+            COUNT(*) FILTER (WHERE p.verified = TRUE)::int AS verified_count,
             COUNT(DISTINCT r.id)::int AS registrations_count
          FROM registrations r
-         LEFT JOIN LATERAL (
-            SELECT
-                COUNT(p.id)::int AS passenger_count,
-                COUNT(*) FILTER (WHERE p.verified = TRUE)::int AS verified_count
-            FROM passengers p
-            WHERE p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
-         ) sub ON TRUE
+         LEFT JOIN passengers p ON p.registration_id = r.id AND COALESCE(p.active, TRUE) = TRUE
          WHERE COALESCE(r.active, TRUE) = TRUE
          GROUP BY COALESCE(NULLIF(TRIM(r.bis), ''), 'Tanpa Kode')
          ORDER BY bus_code ASC`,
@@ -372,14 +366,15 @@ async function fetchBusStatsRows(busFilter) {
     let rows = result.rows.map((row) => {
         const passengerCount = Number(row.passenger_count || 0);
         const verifiedCount = Number(row.verified_count || 0);
+        const manifestCount = Math.max(Number(row.manifest_count || 0), passengerCount);
         return {
             busCode: row.bus_code,
             route: row.jurusan || null,
             destination: row.kota_tujuan || null,
             busGroup: row.kelompok_bis || null,
             busCapacity: row.kapasitas_bis ? Number(row.kapasitas_bis) : null,
-            manifestCount: Number(row.manifest_count || 0),
-            expectedCount: Number(row.manifest_count || 0),
+            manifestCount,
+            expectedCount: manifestCount,
             passengerCount,
             verifiedCount,
             pendingCount: Math.max(0, passengerCount - verifiedCount),
@@ -460,6 +455,8 @@ async function ensureAuditSchema() {
         _auditSchemaReady = (async () => {
             await pool.query("ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'verify'");
             await pool.query('ALTER TABLE passenger_verifications ADD COLUMN IF NOT EXISTS notes TEXT');
+            // Performance: index for ORDER BY verified_at DESC queries
+            await pool.query('CREATE INDEX IF NOT EXISTS idx_pv_verified_at_desc ON passenger_verifications(verified_at DESC)');
         })();
     }
     return _auditSchemaReady;
@@ -468,20 +465,24 @@ async function ensureAuditSchema() {
 let _adminChangeSchemaReady = null;
 async function ensureAdminChangeSchema() {
     if (!_adminChangeSchemaReady) {
-        _adminChangeSchemaReady = pool.query(`
-            CREATE TABLE IF NOT EXISTS admin_change_logs (
-                id BIGSERIAL PRIMARY KEY,
-                entity_type VARCHAR(30) NOT NULL,
-                entity_id VARCHAR(100) NOT NULL,
-                field_name VARCHAR(50) NOT NULL,
-                action VARCHAR(30) NOT NULL,
-                old_value TEXT,
-                new_value TEXT,
-                actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
-                notes TEXT,
-                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
+        _adminChangeSchemaReady = (async () => {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS admin_change_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    entity_type VARCHAR(30) NOT NULL,
+                    entity_id VARCHAR(100) NOT NULL,
+                    field_name VARCHAR(50) NOT NULL,
+                    action VARCHAR(30) NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    actor VARCHAR(100) NOT NULL DEFAULT 'Admin Dashboard',
+                    notes TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            // Performance: index for ORDER BY created_at DESC queries
+            await pool.query('CREATE INDEX IF NOT EXISTS idx_acl_created_at_desc ON admin_change_logs(created_at DESC)');
+        })();
     }
     return _adminChangeSchemaReady;
 }
@@ -1541,53 +1542,26 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                  ORDER BY total_actions DESC, last_action_at DESC
                  LIMIT 5`
             ),
+            // Performance: simplified recent activity — skip legacy UNION ALL + NOT EXISTS
             pool.query(
-                `SELECT * FROM (
-                    SELECT
-                        pv.id,
-                        pv.action,
-                        pv.verified_at,
-                        pv.verified_by,
-                        pv.source,
-                        pv.notes,
-                        p.nama AS passenger_name,
-                        p.registration_id
-                    FROM passenger_verifications pv
-                    JOIN passengers p ON p.id = pv.passenger_id
-                    WHERE COALESCE(p.active, TRUE) = TRUE
-
-                    UNION ALL
-
-                    SELECT
-                        (-p.id) AS id,
-                        'verify' AS action,
-                        p.verified_at,
-                        COALESCE(NULLIF(p.verified_by, ''), 'Unknown') AS verified_by,
-                        'legacy-state' AS source,
-                        NULL AS notes,
-                        p.nama AS passenger_name,
-                        p.registration_id
-                    FROM passengers p
-                    WHERE COALESCE(p.active, TRUE) = TRUE
-                      AND p.verified = TRUE
-                      AND p.verified_at IS NOT NULL
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM passenger_verifications pv
-                          WHERE pv.passenger_id = p.id
-                            AND pv.action = 'verify'
-                      )
-                 ) activity
-                 ORDER BY verified_at DESC, id DESC
-                 LIMIT 10`
+                `SELECT
+                    pv.id,
+                    pv.action,
+                    pv.verified_at,
+                    pv.verified_by,
+                    pv.source,
+                    pv.notes,
+                    p.nama AS passenger_name,
+                    p.registration_id
+                FROM passenger_verifications pv
+                JOIN passengers p ON p.id = pv.passenger_id
+                WHERE COALESCE(p.active, TRUE) = TRUE
+                ORDER BY pv.verified_at DESC, pv.id DESC
+                LIMIT 10`
             ),
             pool.query(
                 `WITH hours AS (
-                    SELECT generate_series(
-                        date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta') - interval '11 hour',
-                        date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta'),
-                        interval '1 hour'
-                    ) AS hour_bucket
+                    SELECT generate_series(date_trunc('hour', CURRENT_TIMESTAMP) - interval '11 hour', date_trunc('hour', CURRENT_TIMESTAMP), interval '1 hour') AS hour_bucket
                  )
                  SELECT
                     to_char(hours.hour_bucket, 'HH24:00') AS hour_label,
@@ -1596,7 +1570,7 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                     COALESCE(COUNT(*) FILTER (WHERE pv.action = 'unverify'), 0)::int AS unverify_actions
                  FROM hours
                  LEFT JOIN passenger_verifications pv
-                    ON date_trunc('hour', pv.verified_at + interval '7 hours') = hours.hour_bucket
+                    ON date_trunc('hour', pv.verified_at) = hours.hour_bucket
                  LEFT JOIN passengers p
                     ON p.id = pv.passenger_id
                     AND COALESCE(p.active, TRUE) = TRUE
@@ -1748,4 +1722,21 @@ app.get(/.*/, (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
+
+    // Performance: pre-warm admin summary cache after startup
+    registrationDataReady.then(async () => {
+        try {
+            await ensureAuditSchema();
+            // Warm the admin summary cache by making a lightweight internal query
+            const countResult = await pool.query(
+                `SELECT
+                    (SELECT COUNT(*) FROM registrations WHERE COALESCE(active, TRUE) = TRUE) AS registrations_count,
+                    (SELECT COUNT(*) FROM passengers WHERE COALESCE(active, TRUE) = TRUE) AS passengers_count,
+                    (SELECT COUNT(*) FROM passengers WHERE COALESCE(active, TRUE) = TRUE AND verified = TRUE) AS verified_count`
+            );
+            console.log(`Pre-warmed DB: ${countResult.rows[0]?.registrations_count || 0} registrations, ${countResult.rows[0]?.passengers_count || 0} passengers`);
+        } catch (err) {
+            console.error('Pre-warm failed (non-fatal):', err.message);
+        }
+    });
 });

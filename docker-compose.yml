@@ -18,6 +18,7 @@ services:
       - ALLOWED_EMAILS=sakitmas010@gmail.com,anatasyadea32@gmail.com,tropicans@gmail.com
       - ADMIN_EMAILS=tropicans@gmail.com
       - SUPERADMIN_EMAIL=tropicans@gmail.com
+      - TZ=Asia/Jakarta
     volumes:
       - ./uploads:/app/uploads
     depends_on:
@@ -31,6 +32,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=kiar_secret
       - POSTGRES_DB=kiar
+      - TZ=Asia/Jakarta
+      - PGTZ=Asia/Jakarta
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
