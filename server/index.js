@@ -1483,7 +1483,11 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
             ),
             pool.query(
                 `WITH hours AS (
-                    SELECT generate_series(date_trunc('hour', CURRENT_TIMESTAMP) - interval '11 hour', date_trunc('hour', CURRENT_TIMESTAMP), interval '1 hour') AS hour_bucket
+                    SELECT generate_series(
+                        date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta') - interval '11 hour',
+                        date_trunc('hour', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta'),
+                        interval '1 hour'
+                    ) AS hour_bucket
                  )
                  SELECT
                     to_char(hours.hour_bucket, 'HH24:00') AS hour_label,
@@ -1492,7 +1496,7 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                     COALESCE(COUNT(*) FILTER (WHERE pv.action = 'unverify'), 0)::int AS unverify_actions
                  FROM hours
                  LEFT JOIN passenger_verifications pv
-                    ON date_trunc('hour', pv.verified_at) = hours.hour_bucket
+                    ON date_trunc('hour', pv.verified_at AT TIME ZONE 'Asia/Jakarta') = hours.hour_bucket
                  LEFT JOIN passengers p
                     ON p.id = pv.passenger_id
                     AND COALESCE(p.active, TRUE) = TRUE
