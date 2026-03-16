@@ -1596,7 +1596,7 @@ app.get('/api/admin-summary', requireAdmin, async (req, res) => {
                     COALESCE(COUNT(*) FILTER (WHERE pv.action = 'unverify'), 0)::int AS unverify_actions
                  FROM hours
                  LEFT JOIN passenger_verifications pv
-                    ON date_trunc('hour', pv.verified_at AT TIME ZONE 'Asia/Jakarta') = hours.hour_bucket
+                    ON date_trunc('hour', pv.verified_at + interval '7 hours') = hours.hour_bucket
                  LEFT JOIN passengers p
                     ON p.id = pv.passenger_id
                     AND COALESCE(p.active, TRUE) = TRUE
