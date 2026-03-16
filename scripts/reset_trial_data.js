@@ -40,7 +40,7 @@ async function main() {
   const client = await pool.connect();
 
   try {
-    // Preview counts
+    // Preview counts — check table existence first
     const counts = {};
     const tables = [
       { name: 'passenger_verifications', label: 'Riwayat verifikasi' },
@@ -48,9 +48,19 @@ async function main() {
       { name: 'app_sessions', label: 'Sesi login' },
     ];
 
+    const existingTables = [];
     for (const t of tables) {
-      const r = await client.query(`SELECT COUNT(*) AS cnt FROM ${t.name}`);
-      counts[t.name] = parseInt(r.rows[0].cnt, 10);
+      const exists = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+        [t.name]
+      );
+      if (exists.rows[0].exists) {
+        const r = await client.query(`SELECT COUNT(*) AS cnt FROM ${t.name}`);
+        counts[t.name] = parseInt(r.rows[0].cnt, 10);
+        existingTables.push(t);
+      } else {
+        counts[t.name] = 0;
+      }
     }
 
     const verifiedR = await client.query(
@@ -87,7 +97,7 @@ async function main() {
     console.log('🚀 Memulai pembersihan...\n');
     await client.query('BEGIN');
 
-    for (const t of tables) {
+    for (const t of existingTables) {
       const res = await client.query(`DELETE FROM ${t.name}`);
       console.log(`  ✓ ${t.label.padEnd(25)} ${String(res.rowCount).padStart(6)} rows dihapus`);
     }
