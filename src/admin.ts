@@ -1656,3 +1656,168 @@ groupVerifyConfirm.addEventListener('click', async () => {
         showAdminToast(`Gagal verifikasi: ${error.message}`);
     }
 });
+
+// --- Add Registration Modal ---
+const addRegistrationModal = document.getElementById('addRegistrationModal') as HTMLDivElement;
+const closeAddRegistration = document.getElementById('closeAddRegistration') as HTMLButtonElement;
+const addRegPhone = document.getElementById('addRegPhone') as HTMLInputElement;
+const addRegJurusan = document.getElementById('addRegJurusan') as HTMLInputElement;
+const addRegKotaTujuan = document.getElementById('addRegKotaTujuan') as HTMLInputElement;
+const addRegBis = document.getElementById('addRegBis') as HTMLInputElement;
+const addRegKtpUrl = document.getElementById('addRegKtpUrl') as HTMLInputElement;
+const addRegIdCardUrl = document.getElementById('addRegIdCardUrl') as HTMLInputElement;
+const addPassengerRows = document.getElementById('addPassengerRows') as HTMLDivElement;
+const btnAddPassengerRow = document.getElementById('btnAddPassengerRow') as HTMLButtonElement;
+const addRegError = document.getElementById('addRegError') as HTMLDivElement;
+const addRegCancelBtn = document.getElementById('addRegCancelBtn') as HTMLButtonElement;
+const addRegSaveBtn = document.getElementById('addRegSaveBtn') as HTMLButtonElement;
+const btnAddRegistration = document.getElementById('btnAddRegistration') as HTMLButtonElement;
+
+let addPassengerCount = 0;
+
+function createPassengerRowHtml(index: number): string {
+    return `<div class="add-passenger-row" data-index="${index}" style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; padding:12px; background:rgba(255,255,255,0.03); border:1px solid var(--border-glass); border-radius:10px;">
+        <div class="crud-field" style="margin:0;">
+            <label style="font-size:0.72rem;">Nama Penumpang ${index + 1} *</label>
+            <input class="settings-input add-pass-nama" type="text" placeholder="Nama lengkap" autocomplete="off" />
+        </div>
+        <div class="crud-field" style="margin:0;">
+            <label style="font-size:0.72rem;">NIK (opsional)</label>
+            <input class="settings-input add-pass-nik" type="text" placeholder="NIK 16 digit" autocomplete="off" />
+        </div>
+        <button type="button" class="icon-btn remove-passenger-btn" title="Hapus penumpang" aria-label="Hapus penumpang" style="margin-bottom:4px; width:32px; height:32px; flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+    </div>`;
+}
+
+function addPassengerRowToForm() {
+    if (addPassengerCount >= 10) {
+        showAdminToast('Maksimal 10 penumpang per rombongan.');
+        return;
+    }
+    addPassengerRows.insertAdjacentHTML('beforeend', createPassengerRowHtml(addPassengerCount));
+    addPassengerCount++;
+    updatePassengerRowLabels();
+}
+
+function updatePassengerRowLabels() {
+    const rows = addPassengerRows.querySelectorAll('.add-passenger-row');
+    rows.forEach((row, i) => {
+        const label = row.querySelector('label');
+        if (label) {
+            label.textContent = `Nama Penumpang ${i + 1} *`;
+        }
+    });
+}
+
+function resetAddRegistrationForm() {
+    addRegPhone.value = '';
+    addRegJurusan.value = '';
+    addRegKotaTujuan.value = '';
+    addRegBis.value = '';
+    addRegKtpUrl.value = '';
+    addRegIdCardUrl.value = '';
+    addPassengerRows.innerHTML = '';
+    addPassengerCount = 0;
+    addRegError.style.display = 'none';
+    addRegError.textContent = '';
+}
+
+function openAddRegistrationModal() {
+    resetAddRegistrationForm();
+    addPassengerRowToForm(); // Start with 1 passenger row
+    addRegistrationModal.style.display = 'flex';
+    window.setTimeout(() => {
+        const firstInput = addPassengerRows.querySelector('.add-pass-nama') as HTMLInputElement;
+        if (firstInput) firstInput.focus();
+    }, 60);
+}
+
+function closeAddRegistrationModal() {
+    addRegistrationModal.style.display = 'none';
+}
+
+async function saveNewRegistration() {
+    addRegError.style.display = 'none';
+
+    // Collect passenger data
+    const rows = addPassengerRows.querySelectorAll('.add-passenger-row');
+    const passengers: { nama: string; nik: string; ktpUrl: string }[] = [];
+    rows.forEach((row) => {
+        const nama = (row.querySelector('.add-pass-nama') as HTMLInputElement)?.value?.trim() || '';
+        const nik = (row.querySelector('.add-pass-nik') as HTMLInputElement)?.value?.trim() || '';
+        if (nama) {
+            passengers.push({ nama, nik, ktpUrl: '' });
+        }
+    });
+
+    if (passengers.length === 0) {
+        addRegError.textContent = 'Minimal 1 penumpang harus memiliki nama.';
+        addRegError.style.display = 'block';
+        return;
+    }
+
+    const payload = {
+        phone: addRegPhone.value.trim() || null,
+        ktpUrl: addRegKtpUrl.value.trim() || null,
+        idCardUrl: addRegIdCardUrl.value.trim() || null,
+        jurusan: addRegJurusan.value.trim() || null,
+        kotaTujuan: addRegKotaTujuan.value.trim() || null,
+        bis: addRegBis.value.trim() || null,
+        passengers,
+    };
+
+    addRegSaveBtn.disabled = true;
+    addRegSaveBtn.textContent = 'Menyimpan...';
+
+    try {
+        const response = await adminFetch('/api/admin/registrations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || `HTTP ${response.status}`);
+        }
+
+        closeAddRegistrationModal();
+        showAdminToast(`Rombongan ${result.registrationId} berhasil ditambahkan dengan ${result.passengersCreated} penumpang.`);
+        await loadData();
+    } catch (error: any) {
+        console.error(error);
+        addRegError.textContent = error.message || 'Gagal menyimpan data.';
+        addRegError.style.display = 'block';
+    } finally {
+        addRegSaveBtn.disabled = false;
+        addRegSaveBtn.textContent = 'Simpan Rombongan';
+    }
+}
+
+// Event listeners for Add Registration Modal
+btnAddRegistration.addEventListener('click', openAddRegistrationModal);
+closeAddRegistration.addEventListener('click', closeAddRegistrationModal);
+addRegCancelBtn.addEventListener('click', closeAddRegistrationModal);
+addRegSaveBtn.addEventListener('click', () => { void saveNewRegistration(); });
+btnAddPassengerRow.addEventListener('click', addPassengerRowToForm);
+
+addRegistrationModal.addEventListener('click', (e) => {
+    if (e.target === addRegistrationModal) closeAddRegistrationModal();
+});
+
+addPassengerRows.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const removeBtn = target.closest('.remove-passenger-btn');
+    if (removeBtn) {
+        const row = removeBtn.closest('.add-passenger-row');
+        if (row && addPassengerRows.children.length > 1) {
+            row.remove();
+            addPassengerCount = addPassengerRows.children.length;
+            updatePassengerRowLabels();
+        } else if (addPassengerRows.children.length <= 1) {
+            showAdminToast('Minimal 1 penumpang harus ada.');
+        }
+    }
+});

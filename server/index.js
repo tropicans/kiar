@@ -960,6 +960,106 @@ app.get('/api/search-name', requireSession, rateLimit, async (req, res) => {
     }
 });
 
+// API: Create Registration + Passengers (Manual Input from Admin Dashboard)
+app.post('/api/admin/registrations', requireAdmin, rateLimit, async (req, res) => {
+    try {
+        await ensureAdminChangeSchema();
+        await ensureRegistrationDataReady();
+        const { phone, ktpUrl, idCardUrl, jurusan, kotaTujuan, kelompokBis, bis, passengers } = req.body || {};
+
+        // Validate passengers
+        if (!Array.isArray(passengers) || passengers.length === 0) {
+            return res.status(400).json({ error: 'Minimal 1 penumpang harus diisi' });
+        }
+        if (passengers.length > 10) {
+            return res.status(400).json({ error: 'Maksimal 10 penumpang per rombongan' });
+        }
+
+        const validPassengers = passengers.filter((p) => p && typeof p.nama === 'string' && p.nama.trim());
+        if (validPassengers.length === 0) {
+            return res.status(400).json({ error: 'Minimal 1 penumpang harus memiliki nama' });
+        }
+
+        // Generate unique registration ID
+        const now = new Date();
+        const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const registrationId = `MANUAL-${datePart}-${randomPart}`;
+
+        // Check for collision (unlikely but safe)
+        const existsCheck = await pool.query('SELECT 1 FROM registrations WHERE id = $1', [registrationId]);
+        if (existsCheck.rows.length > 0) {
+            return res.status(409).json({ error: 'ID bentrok, silakan coba lagi' });
+        }
+
+        const normalizedPhone = normalizeAdminText(phone) || null;
+        const normalizedKtpUrl = normalizeAdminText(ktpUrl) || null;
+        const normalizedIdCardUrl = normalizeAdminText(idCardUrl) || null;
+        const normalizedJurusan = normalizeAdminText(jurusan) || null;
+        const normalizedKotaTujuan = normalizeAdminText(kotaTujuan) || null;
+        const normalizedKelompokBis = normalizeAdminText(kelompokBis) || null;
+        const normalizedBis = normalizeAdminText(bis) || null;
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Insert registration
+            await client.query(
+                `INSERT INTO registrations (id, phone, phone_raw, ktp_url, id_card_url, jurusan, kota_tujuan, kelompok_bis, bis, jumlah_orang, active, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, CURRENT_TIMESTAMP)`,
+                [registrationId, normalizedPhone, normalizedPhone, normalizedKtpUrl, normalizedIdCardUrl, normalizedJurusan, normalizedKotaTujuan, normalizedKelompokBis, normalizedBis, validPassengers.length],
+            );
+
+            // Insert passengers
+            const insertedPassengers = [];
+            for (let i = 0; i < validPassengers.length; i++) {
+                const p = validPassengers[i];
+                const namaNormalized = normalizeNameQuery(normalizeAdminText(p.nama));
+                const nikVal = normalizeAdminNik(p.nik);
+                const nikSuffix = nikVal ? nikVal.slice(-6) : null;
+                const passengerKtpUrl = normalizeAdminText(p.ktpUrl) || null;
+
+                const insertRes = await client.query(
+                    `INSERT INTO passengers (registration_id, source_slot, nama, nama_raw, nama_normalized, is_registrant, nik, nik_suffix, ktp_url, active, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, CURRENT_TIMESTAMP)
+                     RETURNING id`,
+                    [registrationId, i + 1, normalizeAdminText(p.nama), normalizeAdminText(p.nama), namaNormalized, i === 0, nikVal, nikSuffix, passengerKtpUrl],
+                );
+                insertedPassengers.push({ id: insertRes.rows[0].id, nama: normalizeAdminText(p.nama) });
+            }
+
+            // Log creation in admin_change_logs
+            await appendAdminChangeLogs(client, [{
+                entityType: 'registration',
+                entityId: registrationId,
+                fieldName: 'created',
+                action: 'create',
+                oldValue: null,
+                newValue: `${validPassengers.length} penumpang`,
+            }]);
+
+            await client.query('COMMIT');
+
+            // Invalidate summary cache
+            _adminSummaryCache = { data: null, expiresAt: 0 };
+
+            res.json({
+                success: true,
+                registrationId,
+                passengersCreated: insertedPassengers.length,
+            });
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 // API: Get All Registrations (for Admin Dashboard)
 app.get('/api/registrations', requireAdmin, rateLimit, async (req, res) => {
     try {

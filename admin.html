@@ -1125,6 +1125,10 @@
                         </div>
 
                         <div class="header-toolbar">
+                            <button id="btnAddRegistration" class="btn-secondary-admin" type="button" style="gap:6px; background: rgba(74,222,128,0.1); border-color: rgba(74,222,128,0.3); color: #86efac;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Tambah Rombongan
+                            </button>
                         </div>
                     </div>
 
@@ -1445,6 +1449,70 @@
             <div class="settings-footer">
                 <button id="crudCancelBtn" class="btn btn-ghost" type="button">Batal</button>
                 <button id="crudSaveBtn" class="btn btn-primary" type="button">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Registration Modal -->
+    <div class="settings-modal" id="addRegistrationModal" style="display:none;">
+        <div class="settings-card" style="max-width:620px; max-height:90vh; overflow-y:auto;">
+            <div class="settings-header">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Tambah Rombongan Baru
+                </h2>
+                <button id="closeAddRegistration" class="icon-btn" title="Batal" aria-label="Batal">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="settings-body">
+                <div class="crud-modal-title" style="margin-bottom:16px;">Input data rombongan dan penumpang secara manual. Upload KK, ID Card, dan KTP bersifat opsional.</div>
+
+                <!-- Registration Fields -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+                    <div class="crud-field">
+                        <label for="addRegPhone">No WhatsApp</label>
+                        <input id="addRegPhone" class="settings-input" type="text" placeholder="08123456789" autocomplete="off" />
+                    </div>
+                    <div class="crud-field">
+                        <label for="addRegJurusan">Jurusan</label>
+                        <input id="addRegJurusan" class="settings-input" type="text" placeholder="Opsional" autocomplete="off" />
+                    </div>
+                    <div class="crud-field">
+                        <label for="addRegKotaTujuan">Kota Tujuan</label>
+                        <input id="addRegKotaTujuan" class="settings-input" type="text" placeholder="Opsional" autocomplete="off" />
+                    </div>
+                    <div class="crud-field">
+                        <label for="addRegBis">Kode Bis</label>
+                        <input id="addRegBis" class="settings-input" type="text" placeholder="Opsional" autocomplete="off" />
+                    </div>
+                    <div class="crud-field">
+                        <label for="addRegKtpUrl">URL KK</label>
+                        <input id="addRegKtpUrl" class="settings-input" type="text" placeholder="https://... (opsional)" autocomplete="off" />
+                    </div>
+                    <div class="crud-field">
+                        <label for="addRegIdCardUrl">URL ID Card</label>
+                        <input id="addRegIdCardUrl" class="settings-input" type="text" placeholder="https://... (opsional)" autocomplete="off" />
+                    </div>
+                </div>
+
+                <!-- Passengers Section -->
+                <div style="border-top:1px solid var(--border-glass); padding-top:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <div style="font-weight:700; color:var(--text-primary); font-size:0.9rem;">Daftar Penumpang</div>
+                        <button id="btnAddPassengerRow" class="btn-secondary-admin" type="button" style="padding:6px 12px; gap:4px; font-size:0.75rem;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Tambah
+                        </button>
+                    </div>
+                    <div id="addPassengerRows" style="display:flex; flex-direction:column; gap:12px;"></div>
+                </div>
+
+                <div class="crud-error" id="addRegError" style="display:none; margin-top:12px;"></div>
+            </div>
+            <div class="settings-footer">
+                <button id="addRegCancelBtn" class="btn btn-ghost" type="button">Batal</button>
+                <button id="addRegSaveBtn" class="btn btn-primary" type="button">Simpan Rombongan</button>
             </div>
         </div>
     </div>
