@@ -27,7 +27,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@db:5432/kiar',
+  host: process.env.DB_HOST || 'postgres',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'kiar_secret',
+  database: process.env.DB_NAME || 'kiar',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
 });
 
 const DRY_RUN = !process.argv.includes('--confirm');
