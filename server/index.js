@@ -331,8 +331,8 @@ async function ensureExtendedRegistrationColumns() {
     await pool.query('ALTER TABLE passengers ADD COLUMN IF NOT EXISTS nik_suffix VARCHAR(6)');
     await pool.query(`UPDATE passengers SET nik_suffix = RIGHT(regexp_replace(COALESCE(nik, ''), '\\D', '', 'g'), 6) WHERE nik IS NOT NULL AND nik_suffix IS NULL`);
     await pool.query('CREATE INDEX IF NOT EXISTS idx_passengers_nik_suffix ON passengers(nik_suffix) WHERE nik_suffix IS NOT NULL AND COALESCE(active, TRUE) = TRUE');
-    // Performance: ensure nama_normalized is populated and indexed
-    await pool.query(`UPDATE passengers SET nama_normalized = lower(regexp_replace(COALESCE(nama, ''), '\\s+', ' ', 'g')) WHERE nama_normalized IS NULL AND nama IS NOT NULL`);
+    // Performance: ensure nama_normalized is populated, lowercased, and indexed
+    await pool.query(`UPDATE passengers SET nama_normalized = lower(regexp_replace(COALESCE(nama, ''), '\\s+', ' ', 'g')) WHERE nama IS NOT NULL AND (nama_normalized IS NULL OR nama_normalized <> lower(regexp_replace(COALESCE(nama, ''), '\\s+', ' ', 'g')))`);
 
     // ---- Timezone fix: migrate TIMESTAMP → TIMESTAMPTZ ----
     // Old data was stored in UTC by Node.js pg driver, so interpret as UTC during conversion.
