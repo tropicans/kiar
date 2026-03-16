@@ -138,6 +138,12 @@ const pool = new pg.Pool({
     max: parseInt(process.env.DB_POOL_MAX || '20', 10) || 20,
 });
 
+// Performance: force WIB timezone on every new connection
+// so CURRENT_TIMESTAMP, to_char, etc. always return Asia/Jakarta time
+pool.on('connect', (client) => {
+    client.query("SET timezone = 'Asia/Jakarta'");
+});
+
 const routeMetadataReady = loadRouteMetadataFromCsv();
 
 // Serve static files from the Vite build output (dist)
