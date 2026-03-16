@@ -51,7 +51,7 @@ let currentSearchValue = '';
 let currentSearchMode: 'nik' | 'name' = 'nik';
 let currentStaffName = '';
 let selectedByNamePassengerId: number | null = null;
-let groupVerifyOnConfirm: (() => void) | null = null;
+let groupVerifyOnConfirm: ((selectedIds?: number[]) => void) | null = null;
 let groupVerifyOnCancel: (() => void) | null = null;
 let lastUndoToken = 0;
 let lastVerificationContext: {
@@ -1250,10 +1250,14 @@ async function handleVerify(skipGroupPrompt = false, forcedPassengerIds: number[
           cancelText: 'Tetap Satu Orang',
           passengerList: otherPassengers,
           registrantData: groupLookup.data || null,
-          onConfirm: () => {
+          onConfirm: (selectedOtherIds?: number[]) => {
             selectedByNamePassengerId = null;
             updateSelectAllButtonState();
-            void handleVerify(true, sameGroupUnverified.map((p) => p.id));
+            let finalIds = [selectedPassenger.id];
+            if (selectedOtherIds && selectedOtherIds.length > 0) {
+              finalIds = finalIds.concat(selectedOtherIds);
+            }
+            void handleVerify(true, finalIds);
           },
           onCancel: () => {
             void handleVerify(true, [selectedPassenger.id]);
@@ -1337,7 +1341,7 @@ function openGroupVerifyModal(options: {
   cancelText: string;
   passengerList?: PassengerData[];
   registrantData?: RegistrantData | null;
-  onConfirm: () => void;
+  onConfirm: (selectedIds?: number[]) => void;
   onCancel?: () => void;
 }) {
   if (groupVerifyTitleText) {
@@ -1368,9 +1372,37 @@ function openGroupVerifyModal(options: {
     groupVerifyList.innerHTML = options.passengerList
       .map((p) => {
         const nik = p.nik ? escapeHtml(p.nik) : '-';
-        return `<div class="group-verify-list-item"><span class="group-verify-name">${escapeHtml(p.nama)}</span><span class="group-verify-nik">NIK: ${nik}</span></div>`;
+        return `
+          <label class="group-verify-list-item" style="display:flex; align-items:flex-start; gap:12px; cursor:pointer; padding:12px; border:1px solid var(--border-glass); border-radius:8px; margin-bottom:8px; background:rgba(255,255,255,0.02); transition:all 0.2s;">
+            <input type="checkbox" class="group-verify-checkbox" value="${p.id}" checked style="margin-top:2px; transform:scale(1.2);">
+            <div style="flex:1;">
+              <div class="group-verify-name" style="font-weight:600; font-size:0.95rem; color:var(--text-primary);">${escapeHtml(p.nama)}</div>
+              <div class="group-verify-nik" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">NIK: ${nik}</div>
+            </div>
+          </label>
+        `;
       })
       .join('');
+
+    const checkboxes = groupVerifyList.querySelectorAll('.group-verify-checkbox') as NodeListOf<HTMLInputElement>;
+    const updateButtonText = () => {
+      const checkedCount = document.querySelectorAll('#groupVerifyList .group-verify-checkbox:checked').length;
+      if (checkedCount === checkboxes.length) {
+        groupVerifyConfirm.textContent = 'Ya, Verifikasi Semua';
+        groupVerifyConfirm.disabled = false;
+        groupVerifyConfirm.style.opacity = '1';
+      } else if (checkedCount > 0) {
+        groupVerifyConfirm.textContent = `Ya, Verifikasi (${checkedCount} Orang)`;
+        groupVerifyConfirm.disabled = false;
+        groupVerifyConfirm.style.opacity = '1';
+      } else {
+        groupVerifyConfirm.textContent = 'Pilih Minimal 1 Orang';
+        groupVerifyConfirm.disabled = true;
+        groupVerifyConfirm.style.opacity = '0.5';
+      }
+    };
+    checkboxes.forEach(cb => cb.addEventListener('change', updateButtonText));
+
   } else {
     groupVerifyListWrap.style.display = 'none';
     groupVerifyList.innerHTML = '';
@@ -1391,13 +1423,26 @@ function closeGroupVerifyModal() {
   groupVerifyListWrap.style.display = 'none';
   groupVerifyList.innerHTML = '';
   groupVerifyConfirm.textContent = 'Ya, Verifikasi Semua';
+  groupVerifyConfirm.disabled = false;
+  groupVerifyConfirm.style.opacity = '1';
   groupVerifyCancel.textContent = 'Batal';
 }
 
 function runGroupVerifyConfirm() {
   const handler = groupVerifyOnConfirm;
+  
+  let selectedIds: number[] | undefined = undefined;
+  if (groupVerifyListWrap.style.display !== 'none') {
+    const checkboxes = groupVerifyList.querySelectorAll('.group-verify-checkbox:checked') as NodeListOf<HTMLInputElement>;
+    if (checkboxes.length > 0) {
+      selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+    } else {
+      selectedIds = [];
+    }
+  }
+
   closeGroupVerifyModal();
-  if (handler) handler();
+  if (handler) handler(selectedIds);
 }
 
 function runGroupVerifySecondary() {

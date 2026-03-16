@@ -1329,6 +1329,53 @@ body.compact-mode.verify-active #verifySection .ktp-preview {
   padding: 10px 16px !important;
 }
 
+/* ============================================
+   Search Input (Admin/Modals)
+   ============================================ */
+
+.search-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  transition: all 0.2s ease;
+}
+
+[data-theme="light"] .search-container {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.search-container:focus-within {
+  border-color: var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.search-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-family: var(--font);
+  outline: none;
+  min-width: 0;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 .manual-submit-text {
   display: inline;
 }

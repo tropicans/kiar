@@ -1395,6 +1395,71 @@
         </div>
     </div>
 
+    <!-- Bus Passengers Modal -->
+    <div class="settings-modal" id="busPassengersModal" style="display:none;">
+        <div class="settings-card" style="max-width:480px; max-height:85vh; display:flex; flex-direction:column;">
+            <div class="settings-header" style="flex-shrink:0;">
+                <h2 id="busPassengersModalTitle">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="9" y1="3" x2="9" y2="21" />
+                    </svg>
+                    Penumpang Bis
+                </h2>
+                <button id="closeBusPassengersModal" class="icon-btn" title="Tutup" aria-label="Tutup modal">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="settings-body" style="overflow-y:auto; padding-right:8px; display:flex; flex-direction:column; gap:20px;">
+                <div id="busPassengersLoading" class="loading-state" style="display:none;">
+                    <div class="spinner"></div>
+                    <div>Memuat data penumpang...</div>
+                </div>
+                
+                <div id="busPassengersContent" style="display:none; flex-direction:column; gap:20px;">
+                    <div class="search-container" style="margin-top: -8px;">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                        <input type="text" id="busPassengersSearch" class="search-input" placeholder="Cari nama atau grup..." autocomplete="off">
+                    </div>
+                
+                    <div>
+                        <h3 style="font-size:14px; color:var(--accent-green); margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                            </svg>
+                            Sudah Verifikasi (<span id="busVerifiedCount">0</span>)
+                        </h3>
+                        <div class="group-verify-list" id="busVerifiedList" style="display: flex; flex-direction: column; gap: 8px;">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 style="font-size:14px; color:#f87171; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="12" y1="8" x2="12" y2="12" />
+                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                            </svg>
+                            Belum Verifikasi (<span id="busPendingCount">0</span>)
+                        </h3>
+                        <div class="group-verify-list" id="busPendingList" style="display: flex; flex-direction: column; gap: 8px;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-footer" style="flex-shrink:0;">
+                <button id="busPassengersCloseBtn" class="btn btn-ghost" type="button" style="width:100%;">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <!-- KTP Fullscreen Modal (Reused from Main App) -->
     <div class="fullscreen-modal" id="ktpModal" style="display:none;">
         <button class="modal-close-btn" id="modalCloseBtn" aria-label="Tutup gambar">

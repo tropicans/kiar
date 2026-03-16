@@ -1784,6 +1784,34 @@ app.get('/api/admin/bus-stats/export', requireAdmin, async (req, res) => {
     }
 });
 
+app.get('/api/admin/bus-passengers/:busCode', requireAdmin, async (req, res) => {
+    try {
+        await ensureRegistrationDataReady();
+        const busCode = req.params.busCode.trim();
+        const result = await pool.query(
+            `SELECT 
+                p.id, 
+                p.nama, 
+                p.nik, 
+                p.verified, 
+                p.verified_at AS "verifiedAt", 
+                p.verified_by AS "verifiedBy", 
+                p.registration_id AS "registrationId"
+             FROM passengers p
+             JOIN registrations r ON r.id = p.registration_id
+             WHERE COALESCE(p.active, TRUE) = TRUE
+               AND COALESCE(r.active, TRUE) = TRUE
+               AND COALESCE(NULLIF(TRIM(r.bis), ''), 'Tanpa Kode') = $1
+             ORDER BY p.nama ASC`,
+            [busCode]
+        );
+        res.json({ passengers: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 app.get('/api/admin-audit', requireAdmin, async (req, res) => {
     try {
         await ensureAuditSchema();

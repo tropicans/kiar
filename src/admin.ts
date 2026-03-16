@@ -201,9 +201,23 @@ const busFilterSelect = document.getElementById('busFilterSelect') as HTMLSelect
 const busStatusFilterSelect = document.getElementById('busStatusFilter') as HTMLSelectElement;
 const busStatsExportBtn = document.getElementById('busStatsExportBtn') as HTMLButtonElement;
 
+// Bus Passengers Modal Elements
+const busPassengersModal = document.getElementById('busPassengersModal') as HTMLDivElement;
+const busPassengersModalTitle = document.getElementById('busPassengersModalTitle') as HTMLHeadingElement;
+const closeBusPassengersModal = document.getElementById('closeBusPassengersModal') as HTMLButtonElement;
+const busPassengersLoading = document.getElementById('busPassengersLoading') as HTMLDivElement;
+const busPassengersContent = document.getElementById('busPassengersContent') as HTMLDivElement;
+const busPassengersSearch = document.getElementById('busPassengersSearch') as HTMLInputElement;
+const busVerifiedCount = document.getElementById('busVerifiedCount') as HTMLSpanElement;
+const busVerifiedList = document.getElementById('busVerifiedList') as HTMLDivElement;
+const busPendingCount = document.getElementById('busPendingCount') as HTMLSpanElement;
+const busPendingList = document.getElementById('busPendingList') as HTMLDivElement;
+const busPassengersCloseBtn = document.getElementById('busPassengersCloseBtn') as HTMLButtonElement;
+
 // --- State ---
 let registrationsData: Registration[] = [];
 let filteredData: Registration[] = [];
+let currentBusPassengers: Passenger[] = [];
 let currentPage = 1;
 const ITEMS_PER_PAGE = 10;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -607,6 +621,119 @@ crudModal.addEventListener('click', (event) => {
     }
 });
 
+function closeBusPassengersWrapper() {
+    if (busPassengersModal) busPassengersModal.style.display = 'none';
+}
+
+if (closeBusPassengersModal) closeBusPassengersModal.addEventListener('click', closeBusPassengersWrapper);
+if (busPassengersCloseBtn) busPassengersCloseBtn.addEventListener('click', closeBusPassengersWrapper);
+if (busPassengersModal) busPassengersModal.addEventListener('click', (e) => {
+    if (e.target === busPassengersModal) closeBusPassengersWrapper();
+});
+
+function renderBusPassengerList(passengers: Passenger[], query: string = '') {
+    const q = query.toLowerCase().trim();
+    const filtered = passengers.filter(p => {
+        if (!q) return true;
+        const nameMatch = p.nama.toLowerCase().includes(q);
+        const nikMatch = p.nik?.toLowerCase().includes(q);
+        const groupMatch = (p as any).registrationId?.toLowerCase().includes(q);
+        return nameMatch || nikMatch || groupMatch;
+    });
+
+    const verified = filtered.filter(p => p.verified);
+    const pending = filtered.filter(p => !p.verified);
+    
+    if (busVerifiedCount) busVerifiedCount.textContent = String(verified.length);
+    if (busPendingCount) busPendingCount.textContent = String(pending.length);
+        
+    const renderItem = (p: Passenger) => `
+        <div class="group-verify-list-item" style="display:flex; justify-content:space-between; align-items:center; border:1px solid var(--border-glass); padding:10px 14px; border-radius:10px; background:rgba(255,255,255,0.02);">
+            <div>
+                <div style="font-weight:600; font-size:14px; color:var(--text-primary);">${p.nama} ${p.verified ? '<span class="verified-badge">Verified</span>' : ''}</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">NIK: ${p.nik || '-'} &bull; Group: <button type="button" class="btn-ghost" style="padding:0; min-width:auto; height:auto; font-size:12px; font-weight:700; background:transparent; border:none; color:var(--accent-blue);" onclick="navigator.clipboard.writeText('${(p as any).registrationId}'); showAdminToast('ID Rombongan disalin');">${(p as any).registrationId}</button></div>
+            </div>
+            ${p.verified && p.verifiedAt ? `
+                <div style="font-size:11px; color:var(--text-muted); text-align:right;">
+                    Oleh: ${p.verifiedBy || '-'}<br/>${formatDateTime(p.verifiedAt)}
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    if (busVerifiedList) {
+        if (verified.length > 0) {
+            busVerifiedList.innerHTML = verified.map(renderItem).join('');
+        } else {
+            busVerifiedList.innerHTML = '<div class="empty-mini-state">Tidak ada penumpang terverifikasi</div>';
+        }
+    }
+    
+    if (busPendingList) {
+        if (pending.length > 0) {
+            busPendingList.innerHTML = pending.map(renderItem).join('');
+        } else {
+            busPendingList.innerHTML = '<div class="empty-mini-state">Semua penumpang sudah terverifikasi</div>';
+        }
+    }
+}
+
+if (busPassengersSearch) {
+    busPassengersSearch.addEventListener('input', (e) => {
+        const query = (e.target as HTMLInputElement).value;
+        renderBusPassengerList(currentBusPassengers, query);
+    });
+}
+
+async function openBusPassengersModal(busCode: string) {
+    if (!busPassengersModal) return;
+    
+    // Reset modal
+    if (busPassengersModalTitle) {
+        busPassengersModalTitle.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+            </svg>
+            Penumpang: ${busCode}
+        `;
+    }
+    
+    if (busPassengersSearch) busPassengersSearch.value = '';
+    
+    if (busPassengersLoading) busPassengersLoading.style.display = 'block';
+    if (busPassengersLoading) busPassengersLoading.innerHTML = '<div class="spinner"></div><div>Memuat data penumpang...</div>';
+    if (busPassengersContent) busPassengersContent.style.display = 'none';
+    if (busVerifiedList) busVerifiedList.innerHTML = '';
+    if (busPendingList) busPendingList.innerHTML = '';
+    if (busVerifiedCount) busVerifiedCount.textContent = '0';
+    if (busPendingCount) busPendingCount.textContent = '0';
+    
+    busPassengersModal.style.display = 'flex';
+    
+    try {
+        const response = await adminFetch(`/api/admin/bus-passengers/${encodeURIComponent(busCode)}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        currentBusPassengers = data.passengers || [];
+        
+        renderBusPassengerList(currentBusPassengers);
+        
+        if (busPassengersLoading) busPassengersLoading.style.display = 'none';
+        if (busPassengersContent) busPassengersContent.style.display = 'flex';
+    } catch (err: any) {
+        console.error('Failed to fetch bus passengers:', err);
+        if (busPassengersLoading) {
+            busPassengersLoading.innerHTML = `<div class="crud-error" style="text-align:center;">Gagal memuat data penumpang: ${err.message}</div>`;
+        }
+    }
+}
+
+(window as any).openBusPassengersModal = openBusPassengersModal;
+
 function showAdminToast(message: string) {
     adminToastMessage.textContent = message;
     adminToast.classList.add('show');
@@ -792,7 +919,7 @@ function renderBusStats() {
         const busMetaParts = [destinationLabel, routeLabel].filter(Boolean).join(' • ');
         const capacityLabel = entry.busCapacity ? `${entry.busCapacity} kursi` : 'Kapasitas ?';
         return `
-            <div class="bus-stats-card">
+            <div class="bus-stats-card" onclick="openBusPassengersModal('${entry.busCode}')" style="cursor:pointer; transition:all 0.2s ease;">
                 <div class="bus-stats-header">
                     <div>
                         <div class="bus-stats-name">${entry.busCode}</div>
