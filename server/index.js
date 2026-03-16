@@ -320,7 +320,6 @@ function mapRegistrationRow(registration) {
         active: registration.active,
     };
 }
-
 async function ensureExtendedRegistrationColumns() {
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS jurusan TEXT');
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kota_tujuan TEXT');
@@ -334,6 +333,22 @@ async function ensureExtendedRegistrationColumns() {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_passengers_nik_suffix ON passengers(nik_suffix) WHERE nik_suffix IS NOT NULL AND COALESCE(active, TRUE) = TRUE');
     // Performance: ensure nama_normalized is populated and indexed
     await pool.query(`UPDATE passengers SET nama_normalized = lower(regexp_replace(COALESCE(nama, ''), '\\s+', ' ', 'g')) WHERE nama_normalized IS NULL AND nama IS NOT NULL`);
+
+    // ---- Timezone fix: migrate TIMESTAMP → TIMESTAMPTZ ----
+    // Old data was stored in UTC by Node.js pg driver, so interpret as UTC during conversion.
+    // After this, all timestamps are proper TIMESTAMPTZ and display correctly in WIB.
+    const { rows: colCheck } = await pool.query(
+        `SELECT data_type FROM information_schema.columns
+         WHERE table_name = 'passengers' AND column_name = 'verified_at'`);
+    if (colCheck.length > 0 && colCheck[0].data_type === 'timestamp without time zone') {
+        console.log('Migrating timestamp columns to TIMESTAMPTZ (interpreting old data as UTC)...');
+        await pool.query(`ALTER TABLE passengers ALTER COLUMN verified_at TYPE TIMESTAMPTZ USING verified_at AT TIME ZONE 'UTC'`);
+        await pool.query(`ALTER TABLE passengers ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'`);
+        await pool.query(`ALTER TABLE passenger_verifications ALTER COLUMN verified_at TYPE TIMESTAMPTZ USING verified_at AT TIME ZONE 'UTC'`);
+        await pool.query(`ALTER TABLE passenger_verifications ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'`);
+        await pool.query(`ALTER TABLE registrations ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'`);
+        console.log('Timestamp migration complete.');
+    }
 }
 
 const extendedRegistrationColumnsReady = ensureExtendedRegistrationColumns().catch((err) => {
@@ -1174,10 +1189,9 @@ app.post('/api/verify', rateLimit, async (req, res) => {
             }
 
             // Batch update all at once
-            const now = new Date();
             await client.query(
-                'UPDATE passengers SET verified = TRUE, verified_at = $1, verified_by = $2 WHERE id = ANY($3::int[])',
-                [now, verifierName, sanitizedPassengerIds]
+                'UPDATE passengers SET verified = TRUE, verified_at = CURRENT_TIMESTAMP, verified_by = $1 WHERE id = ANY($2::int[])',
+                [verifierName, sanitizedPassengerIds]
             );
 
             await appendPassengerVerificationEvents(client, sanitizedPassengerIds, verifierName, 'scanner', 'verify');
@@ -1221,22 +1235,21 @@ app.post('/api/verify-passengers', rateLimit, async (req, res) => {
         try {
             await client.query('BEGIN');
 
-            const now = new Date();
             const updateRes = await client.query(
                 `UPDATE passengers
                  SET verified = TRUE,
-                     verified_at = COALESCE(verified_at, $1),
-                     verified_by = COALESCE(verified_by, $2)
-                 WHERE id = ANY($3::int[])
+                     verified_at = COALESCE(verified_at, CURRENT_TIMESTAMP),
+                     verified_by = COALESCE(verified_by, $1)
+                 WHERE id = ANY($2::int[])
                  RETURNING id`,
-                [now, verifierName, uniqueIds]
+                [verifierName, uniqueIds]
             );
 
             const updatedIds = updateRes.rows.map((row) => row.id);
             await appendPassengerVerificationEvents(client, updatedIds, verifierName, 'scanner', 'verify');
 
             await client.query('COMMIT');
-            res.json({ success: true, updatedCount: updateRes.rowCount || 0, verifiedAt: now });
+            res.json({ success: true, updatedCount: updateRes.rowCount || 0, verifiedAt: new Date() });
         } catch (e) {
             await client.query('ROLLBACK');
             throw e;
