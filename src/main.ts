@@ -288,6 +288,9 @@ function renderRegistrationMeta(data: RegistrantData | null, loading = false) {
 }
 
 async function showRegistrationInfoForPassenger(passenger: PassengerData, reveal = false) {
+  // Name search: don't show registration meta (Jurusan/Kota/Bis) — results span multiple registrations
+  if (currentSearchMode === 'name') return;
+
   if (reveal && !registrationMetaVisible) {
     registrationMetaVisible = true;
   }
@@ -1039,6 +1042,21 @@ function showVerifyData(passengers: PassengerData[]) {
   regPhone.textContent = currentSearchMode === 'nik'
     ? 'Klik nama untuk tampilkan KTP'
     : 'Hasil nama perlu dicek manual dengan KTP';
+
+  // Name search: hide registration-specific cards (Jurusan/Kota/Bis)
+  // since results span multiple registrations
+  const routeCard = regRoute.closest('.info-card') as HTMLElement | null;
+  const destCard = regDestination.closest('.info-card') as HTMLElement | null;
+  const busCard = regBus.closest('.info-card') as HTMLElement | null;
+  if (currentSearchMode === 'name') {
+    if (routeCard) routeCard.style.display = 'none';
+    if (destCard) destCard.style.display = 'none';
+    if (busCard) busCard.style.display = 'none';
+  } else {
+    if (routeCard) routeCard.style.display = '';
+    if (destCard) destCard.style.display = '';
+    if (busCard) busCard.style.display = '';
+  }
 
   const passengerChecklist = document.getElementById('passengerChecklist') as HTMLDivElement;
   const passengerListItems = document.getElementById('passengerListItems') as HTMLDivElement;
