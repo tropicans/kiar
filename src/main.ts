@@ -1634,8 +1634,49 @@ document.addEventListener('keydown', (e) => {
 // ============================================
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => { });
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+
+      // Check for updates every 60 seconds
+      setInterval(() => { registration.update().catch(() => {}); }, 60_000);
+
+      // Listen for new SW waiting to activate
+      const showUpdateToast = () => {
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toastMessage');
+        if (!toast || !toastMsg) return;
+
+        toastMsg.innerHTML = '🔄 Versi baru tersedia! <button id="swReloadBtn" style="background:var(--accent-gradient);color:#fff;border:none;padding:4px 12px;border-radius:6px;font-weight:600;cursor:pointer;margin-left:8px;">Muat Ulang</button>';
+        toast.classList.add('show');
+        toast.style.display = 'flex';
+
+        document.getElementById('swReloadBtn')?.addEventListener('click', () => {
+          registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+          window.location.reload();
+        });
+      };
+
+      if (registration.waiting) {
+        showUpdateToast();
+      }
+
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateToast();
+          }
+        });
+      });
+
+      // Auto-reload when the new SW takes over
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) { refreshing = true; window.location.reload(); }
+      });
+    } catch { /* SW registration failed — ignore */ }
   });
 }
 
