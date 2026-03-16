@@ -345,6 +345,25 @@ function mapRegistrationRow(registration) {
     };
 }
 async function ensureExtendedRegistrationColumns() {
+    // Auto-create tables that may not exist on older production databases
+    await pool.query(`CREATE TABLE IF NOT EXISTS app_sessions (
+        token VARCHAR(100) PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        picture TEXT,
+        role VARCHAR(20) NOT NULL,
+        is_admin BOOLEAN NOT NULL DEFAULT false,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS admin_summary_cache (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        total_registrations INTEGER DEFAULT 0,
+        total_passengers INTEGER DEFAULT 0,
+        verified_count INTEGER DEFAULT 0,
+        unverified_count INTEGER DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )`);
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS jurusan TEXT');
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kota_tujuan TEXT');
     await pool.query('ALTER TABLE registrations ADD COLUMN IF NOT EXISTS kelompok_bis TEXT');
