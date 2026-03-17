@@ -513,6 +513,214 @@ function buildBusStatsCsv(rows) {
     return lines.join('\n');
 }
 
+function getProviderFilterClause(providerCode) {
+    if (providerCode === 'MDR') {
+        return {
+            sql: `(
+                UPPER(COALESCE(r.bis, '')) LIKE 'MDR%'
+                OR LOWER(COALESCE(r.kelompok_bis, '')) = 'mandiri'
+            )`,
+            label: 'MDR',
+        };
+    }
+
+    if (providerCode === 'BNI') {
+        return {
+            sql: `(
+                UPPER(COALESCE(r.bis, '')) LIKE 'BNI%'
+                OR LOWER(COALESCE(r.kelompok_bis, '')) = 'bni'
+            )`,
+            label: 'BNI',
+        };
+    }
+
+    if (providerCode === 'TPN') {
+        return {
+            sql: `(
+                UPPER(COALESCE(r.bis, '')) LIKE 'TPN%'
+                OR LOWER(COALESCE(r.kelompok_bis, '')) = 'taspen'
+            )`,
+            label: 'TPN',
+        };
+    }
+
+    return null;
+}
+
+function normalizeReportDateInput(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+    return normalized;
+}
+
+async function fetchDetailedPassengerReportRows(options = {}) {
+    await ensureRegistrationDataReady();
+
+    const {
+        verificationStatus = 'all',
+        providerCode = null,
+        startDate = null,
+        endDate = null,
+    } = options;
+    const whereClauses = [
+        'COALESCE(r.active, TRUE) = TRUE',
+        'COALESCE(p.active, TRUE) = TRUE',
+    ];
+    const queryParams = [];
+
+    if (verificationStatus === 'verified') {
+        whereClauses.push('p.verified = TRUE');
+    } else if (verificationStatus === 'pending') {
+        whereClauses.push('COALESCE(p.verified, FALSE) = FALSE');
+    }
+
+    const providerFilter = getProviderFilterClause(providerCode);
+    if (providerFilter) {
+        whereClauses.push(providerFilter.sql);
+    }
+
+    const dateField = verificationStatus === 'verified'
+        ? 'p.verified_at'
+        : 'COALESCE(p.verified_at, r.created_at)';
+
+    if (startDate) {
+        queryParams.push(startDate);
+        whereClauses.push(`${dateField} >= $${queryParams.length}::date`);
+    }
+
+    if (endDate) {
+        queryParams.push(endDate);
+        whereClauses.push(`${dateField} < ($${queryParams.length}::date + INTERVAL '1 day')`);
+    }
+
+    const result = await pool.query(
+        `SELECT
+            r.id AS registration_id,
+            r.phone,
+            r.jurusan,
+            r.kota_tujuan,
+            r.kelompok_bis,
+            r.bis,
+            r.jumlah_orang,
+            r.kapasitas_bis,
+            p.id AS passenger_id,
+            p.nama,
+            p.nik,
+            p.is_registrant,
+            p.verified,
+            p.verified_at,
+            p.verified_by,
+            r.created_at AS registration_created_at,
+            CASE
+                WHEN UPPER(COALESCE(r.bis, '')) LIKE 'MDR%' OR LOWER(COALESCE(r.kelompok_bis, '')) = 'mandiri' THEN 'MDR'
+                WHEN UPPER(COALESCE(r.bis, '')) LIKE 'BNI%' OR LOWER(COALESCE(r.kelompok_bis, '')) = 'bni' THEN 'BNI'
+                WHEN UPPER(COALESCE(r.bis, '')) LIKE 'TPN%' OR LOWER(COALESCE(r.kelompok_bis, '')) = 'taspen' THEN 'TPN'
+                ELSE 'LAINNYA'
+            END AS provider_code
+         FROM passengers p
+         JOIN registrations r ON r.id = p.registration_id
+         WHERE ${whereClauses.join(' AND ')}
+         ORDER BY
+            COALESCE(NULLIF(TRIM(r.bis), ''), 'Tanpa Kode') ASC,
+            r.id ASC,
+            p.nama ASC`,
+        queryParams,
+    );
+
+    return result.rows.map((row) => ({
+        registrationId: row.registration_id,
+        phone: row.phone || '',
+        route: row.jurusan || '',
+        destination: row.kota_tujuan || '',
+        busGroup: row.kelompok_bis || '',
+        busCode: row.bis || 'Tanpa Kode',
+        groupSize: row.jumlah_orang ?? '',
+        busCapacity: row.kapasitas_bis ?? '',
+        passengerId: Number(row.passenger_id),
+        passengerName: row.nama || '',
+        nik: row.nik || '',
+        isRegistrant: Boolean(row.is_registrant),
+        verified: Boolean(row.verified),
+        verifiedAt: row.verified_at,
+        verifiedBy: row.verified_by || '',
+        providerCode: row.provider_code || 'LAINNYA',
+        reportDate: row.verified_at || row.registration_created_at || null,
+    }));
+}
+
+function buildDetailedPassengerCsv(rows) {
+    const headers = [
+        'ID Rombongan',
+        'ID Penumpang',
+        'Nama Penumpang',
+        'NIK',
+        'Status Peserta',
+        'Telepon',
+        'Jurusan',
+        'Kota Tujuan',
+        'Kelompok Bis',
+        'Kode Bis',
+        'Jumlah Rombongan',
+        'Kapasitas Bis',
+        'Kategori Provider',
+        'Status Verifikasi',
+        'Diverifikasi Oleh',
+        'Waktu Verifikasi',
+        'Tanggal Acuan Filter',
+    ];
+    const lines = [headers.join(',')];
+
+    rows.forEach((row) => {
+        lines.push([
+            row.registrationId,
+            row.passengerId,
+            row.passengerName,
+            row.nik,
+            row.isRegistrant ? 'Pendaftar' : 'Anggota',
+            row.phone,
+            row.route,
+            row.destination,
+            row.busGroup,
+            row.busCode,
+            row.groupSize,
+            row.busCapacity,
+            row.providerCode,
+            row.verified ? 'Sudah Diverifikasi' : 'Belum Diverifikasi',
+            row.verifiedBy,
+            row.verifiedAt ? new Date(row.verifiedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', ' ') : '',
+            row.reportDate ? new Date(row.reportDate).toLocaleString('sv-SE', { timeZone: 'Asia/Jakarta' }).replace(' ', ' ') : '',
+        ].map(escapeCsvValue).join(','));
+    });
+
+    return lines.join('\n');
+}
+
+function buildReportFilename(type, providerCode = '') {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    if (type === 'provider' && providerCode) {
+        return `report-${providerCode.toLowerCase()}-${stamp}.csv`;
+    }
+    return `report-${type}-${stamp}.csv`;
+}
+
+function resolveReportOptions(req) {
+    const type = String(req.query.type || '').trim().toLowerCase();
+    const providerCode = String(req.query.provider || '').trim().toUpperCase();
+    const startDate = normalizeReportDateInput(req.query.startDate);
+    const endDate = normalizeReportDateInput(req.query.endDate);
+
+    if ((req.query.startDate && !startDate) || (req.query.endDate && !endDate)) {
+        return { error: 'Format tanggal tidak valid. Gunakan YYYY-MM-DD.' };
+    }
+
+    if (startDate && endDate && startDate > endDate) {
+        return { error: 'Tanggal mulai tidak boleh lebih besar dari tanggal akhir.' };
+    }
+
+    return { type, providerCode, startDate, endDate };
+}
+
 let _auditSchemaReady = null;
 async function ensureAuditSchema() {
     if (!_auditSchemaReady) {
@@ -1857,6 +2065,90 @@ app.get('/api/admin/bus-stats/export', requireAdmin, async (req, res) => {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(csv);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/admin/reports/export', requireAdmin, async (req, res) => {
+    try {
+        const resolvedOptions = resolveReportOptions(req);
+        if (resolvedOptions.error) {
+            return res.status(400).json({ error: resolvedOptions.error });
+        }
+
+        const { type, providerCode, startDate, endDate } = resolvedOptions;
+
+        let rows = [];
+        let filename = '';
+
+        if (type === 'verified') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'verified', startDate, endDate });
+            filename = buildReportFilename('verified');
+        } else if (type === 'absent') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'pending', startDate, endDate });
+            filename = buildReportFilename('absent');
+        } else if (type === 'bus-detail') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'all', startDate, endDate });
+            filename = buildReportFilename('bus-detail');
+        } else if (type === 'provider') {
+            const providerFilter = getProviderFilterClause(providerCode);
+            if (!providerFilter) {
+                return res.status(400).json({ error: 'Provider report tidak valid. Gunakan MDR, BNI, atau TPN.' });
+            }
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'all', providerCode, startDate, endDate });
+            filename = buildReportFilename('provider', providerCode);
+        } else {
+            return res.status(400).json({
+                error: 'Tipe report tidak valid. Gunakan verified, absent, bus-detail, atau provider.',
+            });
+        }
+
+        const csvContent = buildDetailedPassengerCsv(rows);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csvContent);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/admin/reports/preview', requireAdmin, async (req, res) => {
+    try {
+        const resolvedOptions = resolveReportOptions(req);
+        if (resolvedOptions.error) {
+            return res.status(400).json({ error: resolvedOptions.error });
+        }
+
+        const { type, providerCode, startDate, endDate } = resolvedOptions;
+
+        let rows = [];
+        if (type === 'verified') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'verified', startDate, endDate });
+        } else if (type === 'absent') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'pending', startDate, endDate });
+        } else if (type === 'bus-detail') {
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'all', startDate, endDate });
+        } else if (type === 'provider') {
+            const providerFilter = getProviderFilterClause(providerCode);
+            if (!providerFilter) {
+                return res.status(400).json({ error: 'Provider report tidak valid. Gunakan MDR, BNI, atau TPN.' });
+            }
+            rows = await fetchDetailedPassengerReportRows({ verificationStatus: 'all', providerCode, startDate, endDate });
+        } else {
+            return res.status(400).json({
+                error: 'Tipe report tidak valid. Gunakan verified, absent, bus-detail, atau provider.',
+            });
+        }
+
+        const maxPreviewRows = 150;
+        res.json({
+            rows: rows.slice(0, maxPreviewRows),
+            totalRows: rows.length,
+            truncated: rows.length > maxPreviewRows,
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Internal Server Error' });

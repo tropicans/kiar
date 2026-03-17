@@ -166,6 +166,116 @@
             margin-bottom: 24px;
         }
 
+        .report-panel {
+            margin-bottom: 24px;
+        }
+
+        .report-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .report-card {
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid var(--border-glass);
+            background: rgba(255, 255, 255, 0.035);
+            display: grid;
+            gap: 10px;
+        }
+
+        .report-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .report-card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .report-card-desc {
+            color: var(--text-muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .report-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(96, 165, 250, 0.18);
+            color: #bfdbfe;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .report-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .report-filter-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .report-filter-field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .report-filter-field label {
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .report-filter-field input,
+        .report-filter-field select {
+            width: 100%;
+            min-width: 0;
+        }
+
+        .report-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .report-helper-text {
+            color: var(--text-muted);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .report-preview-meta {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .report-preview-table td,
+        .report-preview-table th {
+            white-space: nowrap;
+        }
+
         .summary-panel {
             padding: 20px;
             border-radius: 20px;
@@ -718,7 +828,12 @@
             }
 
             .summary-grid,
-            .summary-panels {
+            .summary-panels,
+            .report-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .report-filter-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -1069,6 +1184,142 @@
                             <div class="summary-value" id="summaryPending">0</div>
                             <div class="summary-meta" id="summaryPendingMeta">Memuat data...</div>
                         </article>
+                    </section>
+
+                    <section class="summary-panel report-panel">
+                        <div class="panel-header">
+                            <div>
+                                <div class="panel-title">Report CSV Detail</div>
+                                <div class="panel-subtitle">Unduh data detail verifikasi, ketidakhadiran, per bis, dan per kelompok provider</div>
+                            </div>
+                        </div>
+                        <div class="report-filter-grid">
+                            <div class="report-filter-field">
+                                <label for="reportTypeSelect">Jenis Report</label>
+                                <select id="reportTypeSelect" class="admin-filter-select">
+                                    <option value="verified">Data Terverifikasi</option>
+                                    <option value="absent">Data Tidak Datang</option>
+                                    <option value="bus-detail">Data Per Bis</option>
+                                    <option value="provider">Data Per MDR, BNI, TPN</option>
+                                </select>
+                            </div>
+                            <div class="report-filter-field">
+                                <label for="reportProviderSelect">Provider</label>
+                                <select id="reportProviderSelect" class="admin-filter-select" disabled>
+                                    <option value="MDR">MDR</option>
+                                    <option value="BNI">BNI</option>
+                                    <option value="TPN">TPN</option>
+                                </select>
+                            </div>
+                            <div class="report-filter-field">
+                                <label for="reportStartDate">Tanggal Mulai</label>
+                                <input id="reportStartDate" class="admin-filter-select" type="date" />
+                            </div>
+                            <div class="report-filter-field">
+                                <label for="reportEndDate">Tanggal Akhir</label>
+                                <input id="reportEndDate" class="admin-filter-select" type="date" />
+                            </div>
+                            <div class="report-filter-field">
+                                <label>Aksi</label>
+                                <div class="report-actions">
+                                    <button id="reportPreviewBtn" class="btn-secondary-admin" type="button">Preview</button>
+                                    <button id="reportDownloadSelectedBtn" class="btn-secondary-admin" type="button">Download</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="report-toolbar">
+                            <div class="report-helper-text">
+                                Filter periode memakai waktu verifikasi jika tersedia. Untuk data yang belum diverifikasi, sistem memakai tanggal data masuk sebagai acuan.
+                            </div>
+                            <div class="report-preview-meta" id="reportPreviewMeta">Pilih report lalu klik preview untuk melihat data.</div>
+                        </div>
+                        <div class="report-grid">
+                            <article class="report-card">
+                                <div class="report-card-header">
+                                    <div>
+                                        <div class="report-card-title">Data Terverifikasi</div>
+                                        <div class="report-card-desc">Berisi penumpang yang sudah diverifikasi, petugas verifikator, dan waktu verifikasi.</div>
+                                    </div>
+                                    <span class="report-pill">Verified</span>
+                                </div>
+                                <div class="report-actions">
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="verified">
+                                        Download CSV
+                                    </button>
+                                </div>
+                            </article>
+
+                            <article class="report-card">
+                                <div class="report-card-header">
+                                    <div>
+                                        <div class="report-card-title">Data Tidak Datang</div>
+                                        <div class="report-card-desc">Berisi penumpang aktif yang belum pernah diverifikasi atau belum hadir.</div>
+                                    </div>
+                                    <span class="report-pill">Absent</span>
+                                </div>
+                                <div class="report-actions">
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="absent">
+                                        Download CSV
+                                    </button>
+                                </div>
+                            </article>
+
+                            <article class="report-card">
+                                <div class="report-card-header">
+                                    <div>
+                                        <div class="report-card-title">Data Per Bis</div>
+                                        <div class="report-card-desc">Berisi detail penumpang lengkap yang sudah dikelompokkan berdasarkan kode bis.</div>
+                                    </div>
+                                    <span class="report-pill">Bus</span>
+                                </div>
+                                <div class="report-actions">
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="bus-detail">
+                                        Download CSV
+                                    </button>
+                                </div>
+                            </article>
+
+                            <article class="report-card">
+                                <div class="report-card-header">
+                                    <div>
+                                        <div class="report-card-title">Data Per MDR, BNI, TPN</div>
+                                        <div class="report-card-desc">Unduh data detail peserta berdasarkan kelompok provider atau bank bus.</div>
+                                    </div>
+                                    <span class="report-pill">Provider</span>
+                                </div>
+                                <div class="report-actions">
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="provider" data-report-provider="MDR">
+                                        MDR
+                                    </button>
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="provider" data-report-provider="BNI">
+                                        BNI
+                                    </button>
+                                    <button class="btn-secondary-admin report-download-btn" type="button" data-report-type="provider" data-report-provider="TPN">
+                                        TPN
+                                    </button>
+                                </div>
+                            </article>
+                        </div>
+                        <div class="data-table-wrapper" style="margin-top: 18px;">
+                            <table class="data-table report-preview-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID Rombongan</th>
+                                        <th>Nama</th>
+                                        <th>Bis</th>
+                                        <th>Provider</th>
+                                        <th>Status</th>
+                                        <th>Verifier</th>
+                                        <th>Waktu Verifikasi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportPreviewTableBody">
+                                    <tr>
+                                        <td colspan="7" class="loading-state">Belum ada preview report.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </section>
 
                     <section class="summary-panels">

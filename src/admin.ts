@@ -121,6 +121,25 @@ interface AdminAuditEntry {
     registration_id: string | null;
 }
 
+type ReportType = 'verified' | 'absent' | 'bus-detail' | 'provider';
+
+interface AdminReportPreviewRow {
+    registrationId: string;
+    passengerId: number;
+    passengerName: string;
+    busCode: string;
+    providerCode: string;
+    verified: boolean;
+    verifiedBy: string;
+    verifiedAt: string | null;
+}
+
+interface AdminReportPreviewResponse {
+    rows: AdminReportPreviewRow[];
+    totalRows: number;
+    truncated: boolean;
+}
+
 // --- DOM Elements ---
 const dashboardContent = document.getElementById('dashboardContent') as HTMLDivElement;
 
@@ -200,6 +219,15 @@ const busStatsTotals = document.getElementById('busStatsTotals') as HTMLDivEleme
 const busFilterSelect = document.getElementById('busFilterSelect') as HTMLSelectElement;
 const busStatusFilterSelect = document.getElementById('busStatusFilter') as HTMLSelectElement;
 const busStatsExportBtn = document.getElementById('busStatsExportBtn') as HTMLButtonElement;
+const reportDownloadButtons = document.querySelectorAll<HTMLButtonElement>('.report-download-btn');
+const reportTypeSelect = document.getElementById('reportTypeSelect') as HTMLSelectElement;
+const reportProviderSelect = document.getElementById('reportProviderSelect') as HTMLSelectElement;
+const reportStartDate = document.getElementById('reportStartDate') as HTMLInputElement;
+const reportEndDate = document.getElementById('reportEndDate') as HTMLInputElement;
+const reportPreviewBtn = document.getElementById('reportPreviewBtn') as HTMLButtonElement;
+const reportDownloadSelectedBtn = document.getElementById('reportDownloadSelectedBtn') as HTMLButtonElement;
+const reportPreviewMeta = document.getElementById('reportPreviewMeta') as HTMLDivElement;
+const reportPreviewTableBody = document.getElementById('reportPreviewTableBody') as HTMLTableSectionElement;
 
 // Bus Passengers Modal Elements
 const busPassengersModal = document.getElementById('busPassengersModal') as HTMLDivElement;
@@ -231,6 +259,7 @@ let verificationTrendChart: Chart | null = null;
 let adminToastTimeout: ReturnType<typeof setTimeout> | null = null;
 let busStatsData: BusStatsEntry[] = [];
 let totalRegistrations = 0;
+let reportPreviewData: AdminReportPreviewRow[] = [];
 type CrudModalState =
     | { kind: 'registration'; registrationId: string }
     | { kind: 'passenger'; passengerId: number };
@@ -252,6 +281,154 @@ function getAuthHeaders(): Record<string, string> {
 function adminFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const headers = { ...getAuthHeaders(), ...(options.headers as Record<string, string> || {}) };
     return fetch(url, { ...options, headers });
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getSelectedReportType(): ReportType {
+    const value = reportTypeSelect.value as ReportType;
+    if (value === 'verified' || value === 'absent' || value === 'bus-detail' || value === 'provider') {
+        return value;
+    }
+    return 'verified';
+}
+
+function buildAdminReportParams(type: ReportType, provider?: string): URLSearchParams {
+    const params = new URLSearchParams({ type });
+    if (provider && type === 'provider') {
+        params.set('provider', provider);
+    }
+    if (reportStartDate.value) {
+        params.set('startDate', reportStartDate.value);
+    }
+    if (reportEndDate.value) {
+        params.set('endDate', reportEndDate.value);
+    }
+    return params;
+}
+
+function syncReportProviderState() {
+    const isProviderType = getSelectedReportType() === 'provider';
+    reportProviderSelect.disabled = !isProviderType;
+}
+
+function renderReportPreviewTable() {
+    if (!reportPreviewData.length) {
+        reportPreviewTableBody.innerHTML = '<tr><td colspan="7" class="loading-state">Tidak ada data untuk filter report ini.</td></tr>';
+        return;
+    }
+
+    reportPreviewTableBody.innerHTML = reportPreviewData.map((row) => `
+        <tr>
+            <td>${escapeHtml(row.registrationId)}</td>
+            <td>${escapeHtml(row.passengerName)}</td>
+            <td>${escapeHtml(row.busCode || '-')}</td>
+            <td>${escapeHtml(row.providerCode || '-')}</td>
+            <td>${row.verified ? 'Sudah Diverifikasi' : 'Belum Diverifikasi'}</td>
+            <td>${escapeHtml(row.verifiedBy || '-')}</td>
+            <td>${escapeHtml(formatDateTime(row.verifiedAt))}</td>
+        </tr>
+    `).join('');
+}
+
+async function refreshReportPreview(triggerButton?: HTMLButtonElement) {
+    const type = getSelectedReportType();
+    const provider = type === 'provider' ? reportProviderSelect.value : undefined;
+    const params = buildAdminReportParams(type, provider);
+    const originalLabel = triggerButton?.textContent || '';
+
+    try {
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.textContent = 'Memuat...';
+        }
+        reportPreviewMeta.textContent = 'Memuat preview report...';
+        reportPreviewTableBody.innerHTML = '<tr><td colspan="7" class="loading-state">Memuat preview report...</td></tr>';
+
+        const response = await adminFetch(`/api/admin/reports/preview?${params.toString()}`);
+        if (!response.ok) {
+            let errorMessage = 'Gagal memuat preview report';
+            try {
+                const errorPayload = await response.json() as { error?: string };
+                errorMessage = errorPayload.error || errorMessage;
+            } catch {
+                // Ignore JSON parse failure and use fallback message.
+            }
+            throw new Error(errorMessage);
+        }
+
+        const payload = await response.json() as AdminReportPreviewResponse;
+        reportPreviewData = Array.isArray(payload.rows) ? payload.rows : [];
+        renderReportPreviewTable();
+
+        const providerSuffix = type === 'provider' ? ` (${provider || '-'})` : '';
+        reportPreviewMeta.textContent = payload.truncated
+            ? `Menampilkan 150 dari ${payload.totalRows} baris preview untuk ${type}${providerSuffix}. Download CSV untuk data lengkap.`
+            : `Menampilkan ${payload.totalRows} baris preview untuk ${type}${providerSuffix}.`;
+    } catch (error: any) {
+        console.error(error);
+        reportPreviewData = [];
+        reportPreviewTableBody.innerHTML = `<tr><td colspan="7" class="loading-state" style="color:#fda4af;">${escapeHtml(error.message)}</td></tr>`;
+        reportPreviewMeta.textContent = 'Preview report gagal dimuat.';
+        showAdminToast(`Preview report gagal: ${error.message}`);
+    } finally {
+        if (triggerButton) {
+            triggerButton.disabled = false;
+            triggerButton.textContent = originalLabel;
+        }
+    }
+}
+
+async function downloadAdminCsvReport(type: ReportType, provider?: string, triggerButton?: HTMLButtonElement) {
+    const params = buildAdminReportParams(type, provider);
+
+    const originalLabel = triggerButton?.textContent || '';
+
+    try {
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.textContent = 'Menyiapkan...';
+        }
+
+        const response = await adminFetch(`/api/admin/reports/export?${params.toString()}`);
+        if (!response.ok) {
+            let errorMessage = 'Gagal mengunduh report';
+            try {
+                const errorPayload = await response.json() as { error?: string };
+                errorMessage = errorPayload.error || errorMessage;
+            } catch {
+                // Ignore JSON parse failure and use fallback message.
+            }
+            throw new Error(errorMessage);
+        }
+
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="?([^\"]+)"?/i);
+        link.href = URL.createObjectURL(blob);
+        link.download = filenameMatch?.[1] || `${type}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+        showAdminToast(`Report ${provider ? `${provider} ` : ''}${type} berhasil diunduh.`);
+    } catch (error: any) {
+        console.error(error);
+        showAdminToast(`Download report gagal: ${error.message}`);
+    } finally {
+        if (triggerButton) {
+            triggerButton.disabled = false;
+            triggerButton.textContent = originalLabel;
+        }
+    }
 }
 
 
@@ -608,6 +785,40 @@ busStatsExportBtn.addEventListener('click', () => {
         a.download = 'bus-stats.csv';
         a.click();
     }).catch(err => showAdminToast(`Export gagal: ${err.message}`));
+});
+reportDownloadButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        const reportType = button.dataset.reportType;
+        const provider = button.dataset.reportProvider;
+        if (!reportType) {
+            showAdminToast('Tipe report belum tersedia.');
+            return;
+        }
+        if (reportType === 'provider' && provider) {
+            reportTypeSelect.value = 'provider';
+            reportProviderSelect.value = provider;
+        } else if (reportType === 'verified' || reportType === 'absent' || reportType === 'bus-detail') {
+            reportTypeSelect.value = reportType;
+        }
+        syncReportProviderState();
+        void downloadAdminCsvReport(getSelectedReportType(), provider, button);
+    });
+});
+reportTypeSelect.addEventListener('change', () => {
+    syncReportProviderState();
+});
+reportProviderSelect.addEventListener('change', () => {
+    if (getSelectedReportType() === 'provider') {
+        reportPreviewMeta.textContent = `Provider aktif: ${reportProviderSelect.value}. Klik preview untuk memuat data.`;
+    }
+});
+reportPreviewBtn.addEventListener('click', () => {
+    void refreshReportPreview(reportPreviewBtn);
+});
+reportDownloadSelectedBtn.addEventListener('click', () => {
+    const type = getSelectedReportType();
+    const provider = type === 'provider' ? reportProviderSelect.value : undefined;
+    void downloadAdminCsvReport(type, provider, reportDownloadSelectedBtn);
 });
 closeCrudModal.addEventListener('click', closeCrudEditor);
 crudCancelBtn.addEventListener('click', closeCrudEditor);
@@ -1107,6 +1318,7 @@ function initTabs() {
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initTabs();
+    syncReportProviderState();
 
     const token = getSessionToken();
     if (!token) {
@@ -1371,6 +1583,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dashboardContent.style.display = 'block';
     loadData();
+    void refreshReportPreview();
 });
 
 async function loadData() {
